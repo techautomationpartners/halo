@@ -156,8 +156,8 @@
           half of Loom, done locally — no cloud, no account, no upload.
         </p>
         <div class="cta-row">
-          <a class="btn btn-primary" href="https://github.com/techautomationpartners/halo">Get the source on GitHub</a>
-          <a class="btn btn-ghost" href="#install">Build it in four commands</a>
+          <a class="btn btn-primary" href="#install">Install with Homebrew</a>
+          <a class="btn btn-ghost" href="https://github.com/techautomationpartners/halo">View the source</a>
         </div>
         <ul class="specs" aria-label="At a glance">
           <li><span>MP4</span> not a link</li>
@@ -440,11 +440,12 @@
         <div class="opt">
           <div class="opt-head">
             <span class="opt-num">01</span>
-            <h3>Homebrew</h3>
+            <h3>Download with Homebrew</h3>
             <span class="opt-tag">RECOMMENDED</span>
           </div>
-          <p class="opt-lead">One command. Homebrew also clears the macOS quarantine
-          flag for you, so Halo opens normally the first time — no right-click needed.</p>
+          <p class="opt-lead">Two lines in Terminal and Halo is in your Applications
+          folder. Homebrew also clears the macOS quarantine flag for you, so Halo opens
+          normally the very first time — no right-click, no scary “damaged” warning.</p>
           <pre class="code" tabindex="0"><code>brew tap techautomationpartners/halo
 brew install --cask halo</code></pre>
           <p class="opt-note">Don't have Homebrew? Install it first from
@@ -456,25 +457,22 @@ brew install --cask halo</code></pre>
         <div class="opt">
           <div class="opt-head">
             <span class="opt-num">02</span>
-            <h3>Download the installer</h3>
-            <span class="opt-tag">NO TERMINAL</span>
+            <h3>No Homebrew yet?</h3>
+            <span class="opt-tag">ONE EXTRA STEP</span>
           </div>
-          <p class="opt-lead">If you have never used a terminal, take this one.</p>
-          <p class="opt-cta">
-            <a class="btn btn-primary" href="https://github.com/techautomationpartners/halo/releases/latest">
-              Download Halo for Mac
-            </a>
-          </p>
-          <ol class="opt-steps">
-            <li>Open the downloaded file and drag <b>Halo</b> onto the <b>Applications</b> folder.</li>
-            <li>Open your Applications folder.</li>
-            <li><b>Right-click Halo and choose “Open”</b>, then click “Open” again.</li>
-          </ol>
-          <p class="opt-note"><b>Step 3 matters.</b> Double-clicking the ordinary way the
-          first time may make macOS say Halo <em>“is damaged and can’t be opened.”</em>
-          It is not damaged and nothing is wrong with your Mac — macOS shows that for any
-          app not notarized by Apple, which costs a developer $99 a year. Right-click →
-          Open tells macOS you trust it, and you only ever do it once.</p>
+          <p class="opt-lead">Homebrew is a free installer for Mac apps and developer
+          tools. Paste this into Terminal, press Return, and follow the prompts — then
+          come back to step 01 above.</p>
+          <pre class="code" tabindex="0"><code>/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"</code></pre>
+          <p class="opt-note">That is Homebrew's own official installer, straight from
+          <a href="https://brew.sh">brew.sh</a>. It will ask for your Mac password, which
+          it needs to create its install directory. Once it finishes, run the two Halo
+          commands above.</p>
+          <p class="opt-note">Prefer not to use Terminal at all? A direct
+          <a href="https://github.com/techautomationpartners/halo/releases/latest">download
+          is on the releases page</a> — but you will have to right-click Halo and choose
+          “Open” the first time, because the app is not notarized by Apple. Homebrew
+          handles that for you, which is why it is the recommended route.</p>
         </div>
 
         <div class="opt">
