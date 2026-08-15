@@ -115,7 +115,15 @@ fi
 
 if [ -n "${HALO_SIGN_IDENTITY}" ] && [ "${HALO_SIGN_IDENTITY}" != "-" ]; then
   echo "==> Code signing ${APP_NAME}.app as: ${HALO_SIGN_IDENTITY}"
-  codesign --force --deep --options runtime --sign "${HALO_SIGN_IDENTITY}" "${APP_DIR}"
+  ENTITLEMENTS="${ROOT_DIR}/Scripts/Halo.entitlements"
+  if [ -f "${ENTITLEMENTS}" ]; then
+    codesign --force --deep --options runtime --entitlements "${ENTITLEMENTS}" \
+      --sign "${HALO_SIGN_IDENTITY}" "${APP_DIR}"
+  else
+    # No entitlements file: do NOT enable the hardened runtime, or camera and
+    # microphone capture are blocked outright.
+    codesign --force --deep --sign "${HALO_SIGN_IDENTITY}" "${APP_DIR}"
+  fi
 else
   echo "==> Ad-hoc code signing ${APP_NAME}.app"
   echo "    WARNING: ad-hoc signatures change on every rebuild, so macOS will forget"

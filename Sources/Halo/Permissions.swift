@@ -33,8 +33,15 @@ public enum PermissionKind: String, Sendable, Codable, Hashable, CaseIterable {
     }
 
     /// Deep link into the matching System Settings > Privacy & Security pane.
-    /// These `x-apple.systempreferences:` anchors have been stable since
-    /// macOS 13 and still resolve on macOS 26.
+    ///
+    /// The legacy `com.apple.preference.security` host is the one every tutorial
+    /// still cites, but on macOS 26 it no longer honours the anchor — it just
+    /// reopens whatever pane System Settings last showed. Verified on macOS
+    /// 26.5.1: asking for `Privacy_ScreenCapture` through the legacy host landed
+    /// on the Camera pane, sending users somewhere they cannot fix the problem
+    /// (Camera has no "+" button, so the app they are looking for is not even
+    /// addable there). `com.apple.settings.PrivacySecurity.extension` resolves
+    /// the anchor correctly.
     public var settingsURL: URL? {
         let anchor: String
         switch self {
@@ -42,7 +49,7 @@ public enum PermissionKind: String, Sendable, Codable, Hashable, CaseIterable {
         case .camera: anchor = "Privacy_Camera"
         case .microphone: anchor = "Privacy_Microphone"
         }
-        return URL(string: "x-apple.systempreferences:com.apple.preference.security?\(anchor)")
+        return URL(string: "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?\(anchor)")
     }
 
     /// Human-readable instructions for granting this permission by hand,
@@ -288,11 +295,13 @@ public enum Permissions {
             if requestIfNeeded && !current.isUsable && current != .restricted {
                 switch kind {
                 case .screenRecording:
-                    // Synchronous and potentially UI-blocking; keep it off the
-                    // caller's (usually main) thread.
-                    let granted = await Task.detached(priority: .userInitiated) {
-                        requestScreenRecording()
-                    }.value
+                    // CGRequestScreenCaptureAccess MUST run on the main thread.
+                    // Dispatching it to a detached task made it return false
+                    // WITHOUT ever showing the prompt or registering the app in
+                    // System Settings > Screen & System Audio Recording, so the
+                    // user was told access was denied with no way to grant it —
+                    // the app never appeared in the list to toggle on.
+                    let granted = await MainActor.run { requestScreenRecording() }
                     current = granted ? .authorized : .denied
                 case .camera:
                     current = await requestCamera() ? .authorized : captureStatus(for: .video)
