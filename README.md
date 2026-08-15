@@ -129,6 +129,6 @@ No third-party dependencies — system frameworks only.
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Copyright (c) 2026 Aman Meghrajani.
+MIT — see [LICENSE](LICENSE). Copyright (c) 2026 Tech Automation Partners.
 </content>
 </invoke>

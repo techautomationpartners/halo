@@ -15,7 +15,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_NAME="Halo"
-BUNDLE_ID="com.amanmeghrajani.halo"
+BUNDLE_ID="com.techautomationpartners.halo"
 APP_DIR="${ROOT_DIR}/${APP_NAME}.app"
 CONTENTS_DIR="${APP_DIR}/Contents"
 MACOS_DIR="${CONTENTS_DIR}/MacOS"
@@ -99,7 +99,7 @@ PLIST
 # app then reports "access was denied" even though the System Settings toggle is on.
 #
 # A real identity produces an identity-based requirement instead:
-#   identifier "com.amanmeghrajani.halo" and anchor apple generic and
+#   identifier "com.techautomationpartners.halo" and anchor apple generic and
 #   certificate leaf[subject.CN] = "Apple Development: ..."
 # which is stable across rebuilds, so the grant sticks.
 #
@@ -130,7 +130,7 @@ else
   echo "    your Screen Recording / Camera grants each time. If you have an Apple"
   echo "    Development or Developer ID certificate, this script picks it up"
   echo "    automatically. Otherwise, after each rebuild run:"
-  echo "      tccutil reset ScreenCapture com.amanmeghrajani.halo"
+  echo "      tccutil reset ScreenCapture com.techautomationpartners.halo"
   codesign --force --deep --sign - "${APP_DIR}"
 fi
 

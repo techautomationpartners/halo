@@ -19,7 +19,7 @@ all. It is not a full Loom clone: there is no sharing backend and no
 timeline editor. It is the recording half, done well and entirely on the
 user's machine, and that is a deliberate feature, not a missing one.
 
-License: MIT (Copyright (c) 2026 Aman Meghrajani) — free for any use,
+License: MIT (Copyright (c) 2026 Tech Automation Partners) — free for any use,
 including commercial.
 
 ## Requirements
@@ -55,7 +55,7 @@ What each step does:
   will not reliably let it appear in Privacy & Security permission lists.
 - `Scripts/make_app.sh` re-runs the release build, then assembles a proper
   `Halo.app` bundle at the **repository root** (`Info.plist`,
-  `CFBundleIdentifier` = `com.amanmeghrajani.halo`, the app icon if present
+  `CFBundleIdentifier` = `com.techautomationpartners.halo`, the app icon if present
   at `Branding/Halo.icns`, `LSUIElement = true` for the menu-bar-only
   behavior) and ad-hoc code-signs it with `codesign --force --deep --sign -`.
   This signing step is why the script exists at all: TCC (macOS's privacy
@@ -156,7 +156,7 @@ That removes the app itself and any recordings you've kept are untouched
 **TCC permission entries are not removed by deleting the app** — Halo will
 still be listed (likely showing as unavailable) in System Settings >
 Privacy & Security until the user manually removes it there, or until they
-run something like `tccutil reset ScreenCapture com.amanmeghrajani.halo`
+run something like `tccutil reset ScreenCapture com.techautomationpartners.halo`
 (and the Camera/Microphone equivalents) themselves. Don't run `tccutil`
 resets on a user's system without them asking for it.
 

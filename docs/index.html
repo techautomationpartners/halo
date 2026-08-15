@@ -52,7 +52,7 @@
   "screenshot": "https://techautomationpartners.github.io/halo/og-image.png",
   "isAccessibleForFree": true,
   "license": "https://opensource.org/licenses/MIT",
-  "author": { "@type": "Person", "name": "Aman Meghrajani" },
+  "author": { "@type": "Organization", "name": "Tech Automation Partners" },
   "featureList": [
     "Circular webcam bubble composited over the screen in real time",
     "Records to MP4 at 1080p or 4K",
@@ -134,6 +134,7 @@
       <a href="#how">How it works</a>
       <a href="#vs-loom">vs Loom</a>
       <a href="#install">Install</a>
+        <a href="#permissions">Permissions</a>
       <a href="#faq">FAQ</a>
     </nav>
     <a class="btn btn-ghost btn-sm head-cta" href="https://github.com/techautomationpartners/halo">GitHub</a>
@@ -422,39 +423,129 @@
     <div class="wrap install-grid">
       <header class="sec-head sec-head-flush">
         <p class="eyebrow">Install</p>
-        <h2>Build it in four commands.</h2>
+        <h2>Three ways in.</h2>
         <p class="sec-lead">
-          Halo ships as source. You compile it once and you have an app bundle macOS
-          will grant screen recording to.
+          Pick the first one that describes you. They all end with the same app in
+          your menu bar.
         </p>
         <ul class="reqs">
           <li><span>macOS 15</span> (Sequoia) or later</li>
           <li><span>Apple Silicon or Intel</span> — built and tested on Apple Silicon (M4)</li>
-          <li><span>Xcode 26 / Swift 6</span> toolchain to build from source</li>
+          <li><span>Free forever</span> — MIT licensed, no account, nothing to buy</li>
         </ul>
       </header>
 
       <div class="install-body">
-        <pre class="code" tabindex="0"><code>git clone https://github.com/techautomationpartners/halo.git
+        <div class="steps">
+          <p><b>1. Download the installer</b> — easiest, no terminal needed.</p>
+        </div>
+
+        <p style="margin:0 0 1.4rem">
+          <a class="btn btn-primary" href="https://github.com/techautomationpartners/halo/releases/latest">
+            Download Halo for Mac
+          </a>
+        </p>
+
+        <div class="steps">
+          <p>Open the downloaded file, drag <b>Halo</b> onto the <b>Applications</b>
+          folder, then open your Applications folder and
+          <b>right-click Halo and choose “Open”</b>. Click “Open” again when macOS asks.</p>
+
+          <p><b>That right-click matters.</b> If you double-click Halo the ordinary way
+          the very first time, macOS may say Halo <em>“is damaged and can’t be opened.”</em>
+          It is not damaged, and nothing is wrong with your Mac. macOS shows that for
+          any app that has not been notarized by Apple, which costs a developer
+          $99 a year. Right-click → Open tells macOS you trust it. You only ever do
+          this once.</p>
+
+          <p><b>2. Homebrew</b> — if you already use it, this handles everything,
+          including that first-launch step.</p>
+
+          <pre class="code" tabindex="0"><code>brew tap techautomationpartners/halo
+brew install --cask halo</code></pre>
+
+          <p>If Homebrew asks you to trust the tap, run
+          <code>brew trust --cask techautomationpartners/halo/halo</code> and install again.
+          Homebrew added that check recently for any tap outside its core repository.</p>
+
+          <p><b>3. Build from source</b> — needs Xcode 26 / Swift 6.</p>
+
+          <pre class="code" tabindex="0"><code>git clone https://github.com/techautomationpartners/halo.git
 cd halo
 swift build -c release
 Scripts/make_app.sh</code></pre>
 
+          <p><code>Scripts/make_app.sh</code> assembles <code>Halo.app</code> at the
+          repository root and signs it. The signature matters: macOS ties screen
+          recording and camera permissions to a signed bundle identity, and an unsigned
+          binary may never appear in the permission list at all.</p>
+
+          <p><b>Then run it.</b> Halo has no Dock icon and no window — it lives in the
+          menu bar at the top of your screen, as a small ring. Click it, pick a screen
+          and a camera, and record. Your files land in your <b>Movies</b> folder, in a
+          folder called <b>Halo</b>. Nothing is uploaded anywhere, ever.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────────────────── permissions ─────────────────────── -->
+  <section id="permissions" class="section section-inset">
+    <div class="wrap install-grid">
+      <header class="sec-head sec-head-flush">
+        <p class="eyebrow">Permissions</p>
+        <h2>macOS will ask. Here's the order.</h2>
+        <p class="sec-lead">
+          Halo needs three permissions, and macOS deliberately makes them
+          un-automatable — no app can grant them on your behalf. This is the part
+          people get stuck on, so it is written out in full.
+        </p>
+        <ul class="reqs">
+          <li><span>Screen &amp; System Audio Recording</span> — required; also covers system audio</li>
+          <li><span>Camera</span> — only if you want the webcam bubble</li>
+          <li><span>Microphone</span> — only if you want narration</li>
+        </ul>
+      </header>
+
+      <div class="install-body">
         <div class="steps">
-          <p><b>What that produces.</b> <code>swift build</code> gives you a bare
-          executable; <code>Scripts/make_app.sh</code> assembles it into
-          <code>Halo.app</code> at the repository root, with the correct
-          <code>Info.plist</code> and an ad-hoc code signature.</p>
+          <p><b>1. Move Halo to /Applications first.</b> Grants attach to the app where
+          it lives. Granting from a build folder and then moving the app can invalidate
+          the grant.</p>
 
-          <p><b>Why the signature matters.</b> TCC — macOS's privacy permission
-          database — ties Screen Recording, Camera, and Microphone grants to a signed
-          bundle identity. An unsigned loose binary may never appear in System Settings'
-          permission lists at all.</p>
+          <p><b>2. Start a recording.</b> macOS shows the prompts at the moment Halo
+          first needs each permission. Approve them.</p>
 
-          <p><b>Then run it.</b> Halo has no dock icon and no windows. It appears in the
-          menu bar: click it, pick a screen and a camera, and record. macOS asks for the
-          permissions it needs on first launch, and manages those grants itself —
-          nothing about them leaves your machine.</p>
+          <p><b>3. Quit and relaunch Halo after granting Screen Recording.</b> This step
+          is not optional and is the single most common reason people think Halo is
+          broken. macOS caches the answer for the lifetime of the process, so a running
+          app keeps seeing "denied" no matter what you toggle.</p>
+
+          <p><b>If no prompt appears.</b> macOS only ever shows the Screen Recording
+          prompt <em>once per app</em>. After that the toggle is the only way in. Open
+          <b>System Settings → Privacy &amp; Security → Screen &amp; System Audio
+          Recording</b>, click the <b>+</b> button, and add
+          <code>/Applications/Halo.app</code> directly. That pane is the one place macOS
+          lets you add an app by hand — Camera and Microphone have no <b>+</b> button,
+          which is why you cannot fix this from there.</p>
+
+          <p><b>If the toggle is on but Halo still says access was denied.</b> You almost
+          certainly have a stale duplicate entry from an earlier build. Look for two
+          "Halo" rows in the list. Clear them and start clean:</p>
+
+          <pre class="code" tabindex="0"><code>tccutil reset ScreenCapture com.techautomationpartners.halo
+tccutil reset Camera com.techautomationpartners.halo
+tccutil reset Microphone com.techautomationpartners.halo</code></pre>
+
+          <p>Then relaunch Halo and grant again. macOS treats an app's <em>code
+          signature</em> as its identity, so a rebuilt binary can read as a different
+          app and quietly lose its grants. <code>Scripts/make_app.sh</code> avoids this
+          by signing with a Developer ID or Apple Development certificate when it finds
+          one — that identity is stable across rebuilds. Falling back to an ad-hoc
+          signature means re-granting after every build.</p>
+
+          <p><b>Nothing here phones home.</b> These grants are between you and macOS.
+          Halo has no network code at all, and your recordings never leave the machine.</p>
         </div>
       </div>
     </div>
@@ -532,7 +623,7 @@ Scripts/make_app.sh</code></pre>
       <p class="eyebrow">License</p>
       <h2>MIT. That's the whole deal.</h2>
       <p class="license-copy">
-        Copyright © 2026 Aman Meghrajani. Use it personally or commercially, modify it,
+        Copyright © 2026 Tech Automation Partners. Use it personally or commercially, modify it,
         fork it, rebrand it, ship it inside a product you charge for. Keep the copyright
         notice with the source and you have met every obligation the license imposes.
       </p>
@@ -560,6 +651,7 @@ Scripts/make_app.sh</code></pre>
       <a href="#how">How it works</a>
       <a href="#vs-loom">vs Loom</a>
       <a href="#install">Install</a>
+        <a href="#permissions">Permissions</a>
       <a href="#faq">FAQ</a>
       <a href="https://github.com/techautomationpartners/halo">GitHub</a>
     </nav>
