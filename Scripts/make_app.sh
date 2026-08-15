@@ -106,24 +106,36 @@ PLIST
 # Override with:  HALO_SIGN_IDENTITY="Developer ID Application: ..." ./Scripts/make_app.sh
 # Force ad-hoc with: HALO_SIGN_IDENTITY=-
 if [ -z "${HALO_SIGN_IDENTITY:-}" ]; then
+  # `|| true` is load-bearing: under `set -euo pipefail`, grep exiting 1 because
+  # no Developer ID exists would abort the whole script BEFORE the signing step,
+  # leaving a bundle carrying only Swift's linker-signed placeholder signature —
+  # which macOS will not accept into the privacy lists at all.
   HALO_SIGN_IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null \
-    | grep -E 'Developer ID Application|Apple Development' \
+    | grep -E 'Developer ID Application' \
     | grep -v CSSMERR \
     | head -1 \
-    | sed -E 's/.*"(.*)".*/\1/')
+    | sed -E 's/.*"(.*)".*/\1/' || true)
 fi
 
-if [ -n "${HALO_SIGN_IDENTITY}" ] && [ "${HALO_SIGN_IDENTITY}" != "-" ]; then
+# HARDENED RUNTIME IS ONLY SAFE WITH A DEVELOPER ID.
+# An "Apple Development" certificate is a *development* identity: entitlements
+# signed with it must be authorized by an embedded provisioning profile. Signing
+# with hardened runtime + entitlements and NO profile yields a bundle macOS
+# treats as invalid for privacy purposes — Halo then never appears in
+# System Settings > Screen & System Audio Recording, the prompt degrades to the
+# already-denied "Open System Settings / Deny" variant, and even adding the app
+# by hand with the "+" button silently fails. Observed directly on macOS 26.5.1.
+# Ad-hoc, or a Developer ID, both work.
+if [ -n "${HALO_SIGN_IDENTITY}" ] && [[ "${HALO_SIGN_IDENTITY}" == "Developer ID Application"* ]]; then
   echo "==> Code signing ${APP_NAME}.app as: ${HALO_SIGN_IDENTITY}"
   ENTITLEMENTS="${ROOT_DIR}/Scripts/Halo.entitlements"
-  if [ -f "${ENTITLEMENTS}" ]; then
-    codesign --force --deep --options runtime --entitlements "${ENTITLEMENTS}" \
-      --sign "${HALO_SIGN_IDENTITY}" "${APP_DIR}"
-  else
-    # No entitlements file: do NOT enable the hardened runtime, or camera and
-    # microphone capture are blocked outright.
-    codesign --force --deep --sign "${HALO_SIGN_IDENTITY}" "${APP_DIR}"
-  fi
+  codesign --force --deep --options runtime --entitlements "${ENTITLEMENTS}" \
+    --sign "${HALO_SIGN_IDENTITY}" "${APP_DIR}"
+elif [ -n "${HALO_SIGN_IDENTITY}" ] && [ "${HALO_SIGN_IDENTITY}" != "-" ]; then
+  # A development identity: sign WITHOUT hardened runtime and WITHOUT
+  # entitlements, per the note above.
+  echo "==> Code signing ${APP_NAME}.app as: ${HALO_SIGN_IDENTITY} (no hardened runtime)"
+  codesign --force --deep --sign "${HALO_SIGN_IDENTITY}" "${APP_DIR}"
 else
   echo "==> Ad-hoc code signing ${APP_NAME}.app"
   echo "    WARNING: ad-hoc signatures change on every rebuild, so macOS will forget"
