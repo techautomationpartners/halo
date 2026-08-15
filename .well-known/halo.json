@@ -1,0 +1,101 @@
+{
+  "name": "Halo",
+  "description": "A free, open-source, local screen recorder for macOS with a circular webcam bubble overlay — a free Loom alternative for Mac. Records MP4 at 1080p or 4K with hardware encoding. No cloud, no account, no AI features, no telemetry.",
+  "homepage": "https://techautomationpartners.github.io/halo/",
+  "repo": "https://github.com/techautomationpartners/halo",
+  "license": "MIT",
+  "version": "1.0.0",
+  "platform": "macOS",
+  "minimum_os_version": "15.0",
+  "supported_architectures": ["arm64", "x86_64"],
+  "build_toolchain": "Swift 6",
+  "distribution": "source-only",
+  "install_steps": [
+    {
+      "step": "Clone the repository",
+      "command": "git clone https://github.com/techautomationpartners/halo.git && cd halo"
+    },
+    {
+      "step": "Build the release binary",
+      "command": "swift build -c release"
+    },
+    {
+      "step": "Assemble and ad-hoc code-sign the Halo.app bundle (required for stable TCC identity)",
+      "command": "./Scripts/make_app.sh"
+    },
+    {
+      "step": "Move the app into /Applications",
+      "command": "mv Halo.app /Applications/"
+    },
+    {
+      "step": "Launch it (first launch triggers permission prompts)",
+      "command": "open /Applications/Halo.app"
+    }
+  ],
+  "verify_steps": [
+    {
+      "step": "Check the bundle is signed",
+      "command": "codesign -dv /Applications/Halo.app"
+    },
+    {
+      "step": "Check the binary runs and reports its version (does not require any permission)",
+      "command": "/Applications/Halo.app/Contents/MacOS/Halo --version"
+    },
+    {
+      "step": "Check Halo is running (menu-bar only, no Dock icon)",
+      "command": "pgrep -fl Halo.app/Contents/MacOS/Halo"
+    },
+    {
+      "step": "Check a recording produced a real, non-zero-size file before reporting success",
+      "command": "ls -la ~/Movies/Halo/"
+    }
+  ],
+  "uninstall_steps": [
+    {
+      "step": "Remove the app bundle",
+      "command": "rm -rf /Applications/Halo.app"
+    }
+  ],
+  "required_permissions": [
+    {
+      "name": "Screen Recording",
+      "tcc_service": "ScreenCapture",
+      "required": true,
+      "grantable_programmatically": false,
+      "system_settings_pane": "Privacy & Security > Screen & System Audio Recording",
+      "notes": "Hard blocker if missing; macOS shows the system prompt at most once per app, after which only the System Settings toggle works. Halo must be relaunched after the toggle is granted before capture works."
+    },
+    {
+      "name": "Camera",
+      "tcc_service": "Camera",
+      "required": false,
+      "grantable_programmatically": false,
+      "system_settings_pane": "Privacy & Security > Camera",
+      "notes": "Needed only for the webcam bubble. Screen recording still works without it; the bubble is simply empty."
+    },
+    {
+      "name": "Microphone",
+      "tcc_service": "Microphone",
+      "required": false,
+      "grantable_programmatically": false,
+      "system_settings_pane": "Privacy & Security > Microphone",
+      "notes": "Needed only for narration audio. Screen recording still works without it; the recording just has no voice track."
+    }
+  ],
+  "output_directory": "~/Movies/Halo",
+  "output_format": "mp4",
+  "output_filename_pattern": "Halo-YYYY-MM-DD-HHmmss.mp4",
+  "agent_guidance": {
+    "do": [
+      "Instruct the human user to grant Screen Recording, Camera, and Microphone permissions manually in System Settings > Privacy & Security.",
+      "Instruct the user to relaunch Halo after granting Screen Recording.",
+      "Verify recording success by checking that the output .mp4 file exists and has non-zero size."
+    ],
+    "dont": [
+      "Do not attempt to script, automate, or bypass TCC permission prompts — there is no supported way to grant these without the human using System Settings.",
+      "Do not claim a recording succeeded without checking the output file exists and is non-zero.",
+      "Do not re-sign or rebuild an already-authorized Halo.app in place if preserving existing permission grants matters — a changed signature can reset TCC state.",
+      "Do not describe Halo as having a cloud mode, accounts, sharing links, or AI features — none exist."
+    ]
+  }
+}

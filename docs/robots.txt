@@ -1,0 +1,13 @@
+# NOTE: this is a GitHub Pages *project* site, so this file is served at
+#   https://techautomationpartners.github.io/halo/robots.txt
+# Crawlers only read robots.txt from the origin root
+# (https://techautomationpartners.github.io/robots.txt), which this repo does
+# not own. Nothing here is enforced, and the Sitemap line below is not a
+# discovery path. Submit the sitemap directly in Google Search Console and Bing
+# Webmaster Tools for the /halo/ property. If a custom domain is ever attached,
+# move this file to that domain's root and it becomes live as written.
+
+User-agent: *
+Allow: /
+
+Sitemap: https://techautomationpartners.github.io/halo/sitemap.xml

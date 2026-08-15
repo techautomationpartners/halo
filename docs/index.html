@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>Halo — a free Loom alternative for Mac | open-source screen recorder</title>
+<meta name="description" content="Halo is a free, open-source screen recorder for macOS with a circular webcam bubble. Records 4K MP4 locally — no cloud, no account, no sign-up. MIT licensed.">
+<link rel="canonical" href="https://techautomationpartners.github.io/halo/">
+
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0B0D12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F2F3F7" media="(prefers-color-scheme: light)">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Halo">
+<meta property="og:locale" content="en_US">
+<meta property="og:url" content="https://techautomationpartners.github.io/halo/">
+<meta property="og:title" content="Halo — a free Loom alternative for Mac">
+<meta property="og:description" content="A free, open-source screen recorder for macOS with a circular webcam bubble. Records 4K MP4 locally — no cloud, no account, no sign-up. MIT licensed.">
+<meta property="og:image" content="https://techautomationpartners.github.io/halo/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="The Halo coral-to-violet ring beside the wordmark Halo and the line: free, local screen recorder for Mac.">
+
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Halo — a free Loom alternative for Mac">
+<meta name="twitter:description" content="A free, open-source screen recorder for macOS with a circular webcam bubble. Records 4K MP4 locally — no cloud, no account, no sign-up. MIT licensed.">
+<meta name="twitter:image" content="https://techautomationpartners.github.io/halo/og-image.png">
+<meta name="twitter:image:alt" content="The Halo coral-to-violet ring beside the wordmark Halo and the line: free, local screen recorder for Mac.">
+
+<link rel="icon" href="assets/halo-icon-1024.png" type="image/png">
+<link rel="apple-touch-icon" href="assets/halo-icon-1024.png">
+<link rel="stylesheet" href="style.css">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Halo",
+  "alternateName": "Halo screen recorder",
+  "description": "A free, open-source screen recorder for macOS with a circular webcam bubble. Records to MP4 at 1080p or 4K with hardware encoding, entirely on your own machine — no cloud, no account, no upload.",
+  "applicationCategory": "MultimediaApplication",
+  "applicationSubCategory": "Screen recorder",
+  "operatingSystem": "macOS 15 or later",
+  "softwareRequirements": "macOS 15 (Sequoia) or later; Apple Silicon or Intel Mac",
+  "processorRequirements": "Apple Silicon or Intel",
+  "url": "https://techautomationpartners.github.io/halo/",
+  "codeRepository": "https://github.com/techautomationpartners/halo",
+  "downloadUrl": "https://github.com/techautomationpartners/halo",
+  "image": "https://techautomationpartners.github.io/halo/og-image.png",
+  "screenshot": "https://techautomationpartners.github.io/halo/og-image.png",
+  "isAccessibleForFree": true,
+  "license": "https://opensource.org/licenses/MIT",
+  "author": { "@type": "Person", "name": "Aman Meghrajani" },
+  "featureList": [
+    "Circular webcam bubble composited over the screen in real time",
+    "Records to MP4 at 1080p or 4K",
+    "Hardware video encoding via VideoToolbox",
+    "Menu-bar only, no dock icon",
+    "Runs entirely offline with no network code",
+    "MIT licensed open source"
+  ],
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD",
+    "availability": "https://schema.org/InStock"
+  }
+}
+</script>
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Is Halo really free?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Yes. Halo is MIT licensed and free for anything, including commercial use. There is no paid tier, no trial, and nothing to buy." }
+    },
+    {
+      "@type": "Question",
+      "name": "Is Halo a Loom alternative?",
+      "acceptedAnswer": { "@type": "Answer", "text": "It replaces Loom's recording, not Loom's platform. There are no share links, no hosting, and no editor. If your workflow ends with a video file, Halo replaces Loom completely. If it ends with a link you send someone, it does not." }
+    },
+    {
+      "@type": "Question",
+      "name": "Does Halo upload my recordings anywhere?",
+      "acceptedAnswer": { "@type": "Answer", "text": "No. Halo has no networking code at all. Recordings are written to your disk and stay there. There is no cloud, no telemetry, and no analytics." }
+    },
+    {
+      "@type": "Question",
+      "name": "Do I need an account to use Halo?",
+      "acceptedAnswer": { "@type": "Answer", "text": "No. There is no sign-up, no login, and no account system. You launch the app and record." }
+    },
+    {
+      "@type": "Question",
+      "name": "What version of macOS does Halo need?",
+      "acceptedAnswer": { "@type": "Answer", "text": "macOS 15 (Sequoia) or later, because Halo captures the microphone through SCStreamConfiguration.captureMicrophone, which was introduced in macOS 15. It runs on Apple Silicon and Intel Macs, and is built and tested on Apple Silicon (M4)." }
+    },
+    {
+      "@type": "Question",
+      "name": "What format and resolution does Halo record?",
+      "acceptedAnswer": { "@type": "Answer", "text": "MP4, at 1080p or 4K. Encoding is done in hardware through VideoToolbox." }
+    },
+    {
+      "@type": "Question",
+      "name": "Can I trim or edit a recording inside Halo?",
+      "acceptedAnswer": { "@type": "Answer", "text": "No. Halo has no timeline editor. It hands you a standard MP4 that opens in any editor you already use." }
+    },
+    {
+      "@type": "Question",
+      "name": "Can I use Halo at work or inside a commercial product?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Yes. The MIT license permits commercial use, modification, and redistribution. The only obligation is keeping the copyright notice with the source." }
+    }
+  ]
+}
+</script>
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="site-head">
+  <div class="wrap head-inner">
+    <a class="brand" href="#main" aria-label="Halo, home">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span class="brand-word">Halo</span>
+    </a>
+    <nav class="nav" aria-label="Sections">
+      <a href="#features">What it does</a>
+      <a href="#how">How it works</a>
+      <a href="#vs-loom">vs Loom</a>
+      <a href="#install">Install</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+    <a class="btn btn-ghost btn-sm head-cta" href="https://github.com/techautomationpartners/halo">GitHub</a>
+  </div>
+</header>
+
+<main id="main">
+
+  <!-- ───────────────────────── hero ───────────────────────── -->
+  <section class="hero">
+    <div class="wrap hero-grid">
+
+      <div class="hero-copy">
+        <p class="eyebrow">Open source · MIT · macOS 15+</p>
+        <h1>A free Loom alternative <br>for <span class="grad">Mac</span>.</h1>
+        <p class="lead">
+          Halo records your screen with a circular webcam bubble straight to an MP4
+          on your disk. 1080p or 4K, hardware-encoded. It is the recording
+          half of Loom, done locally — no cloud, no account, no upload.
+        </p>
+        <div class="cta-row">
+          <a class="btn btn-primary" href="https://github.com/techautomationpartners/halo">Get the source on GitHub</a>
+          <a class="btn btn-ghost" href="#install">Build it in four commands</a>
+        </div>
+        <ul class="specs" aria-label="At a glance">
+          <li><span>MP4</span> not a link</li>
+          <li><span>4K</span> max capture</li>
+          <li><span>Menu bar</span> no dock icon</li>
+          <li><span>0 bytes</span> ever uploaded</li>
+        </ul>
+      </div>
+
+      <div class="hero-visual" role="img"
+           aria-label="Illustration: a glowing coral-to-violet ring — Halo's circular webcam bubble — overlapping a wireframe of a Mac screen being recorded, with the Halo icon in the menu bar.">
+        <div class="screen" aria-hidden="true">
+          <div class="screen-bar">
+            <span class="screen-time">Recording</span>
+            <img src="assets/menubarRecording_18@2x.png" alt="" width="18" height="18" class="menubar-icon">
+          </div>
+          <div class="screen-body">
+            <span class="sk sk-a"></span>
+            <span class="sk sk-b"></span>
+            <span class="sk sk-c"></span>
+            <span class="sk sk-d"></span>
+          </div>
+        </div>
+        <div class="ring" aria-hidden="true"><span class="ring-core"></span></div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ─────────────────────── what it does ─────────────────────── -->
+  <section id="features" class="section">
+    <div class="wrap">
+      <header class="sec-head">
+        <p class="eyebrow">What it does</p>
+        <h2>A recorder, not a platform.</h2>
+        <p class="sec-lead">
+          Everything below happens on your Mac, in one pass, and ends in a file you own.
+        </p>
+      </header>
+
+      <div class="cards">
+        <article class="card">
+          <p class="card-tag">Compositor</p>
+          <h3>A real circular webcam bubble</h3>
+          <p>Your camera is masked into a circle and composited over the screen while
+          you record. One file comes out — nothing to align, layer, or key in post.</p>
+        </article>
+
+        <article class="card">
+          <p class="card-tag">Encoder</p>
+          <h3>1080p or 4K</h3>
+          <p>Encoding runs on Apple's media engine through VideoToolbox, so a 4K capture
+          doesn't spend your CPU budget fighting the thing you're demoing.</p>
+        </article>
+
+        <article class="card">
+          <p class="card-tag">Interface</p>
+          <h3>Lives in the menu bar</h3>
+          <p>No dock icon, no windows, no workspace to arrange. Click the icon, pick a
+          screen and a camera, start recording. Click again to stop.</p>
+        </article>
+
+        <article class="card">
+          <p class="card-tag">Output</p>
+          <h3>Files, not links</h3>
+          <p>Recordings land on disk as plain MP4. Drop them into any editor, attach them
+          to an email, archive them. Nothing expires and nothing needs a viewer.</p>
+        </article>
+
+        <article class="card">
+          <p class="card-tag">Network</p>
+          <h3>No network code at all</h3>
+          <p>Not "privacy-first" as a posture — there is no cloud, no account system, no
+          telemetry, and no analytics to audit, because none of it was written.</p>
+        </article>
+
+        <article class="card">
+          <p class="card-tag">License</p>
+          <h3>MIT, genuinely</h3>
+          <p>Read it, fork it, rename it, ship it inside something you sell. Keep the
+          copyright notice with the source and you have met the whole obligation.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────────────────── what it isn't ─────────────────────── -->
+  <section class="section section-inset">
+    <div class="wrap not-grid">
+      <header class="sec-head sec-head-flush">
+        <p class="eyebrow">What it isn't</p>
+        <h2>The platform half is deliberately absent.</h2>
+      </header>
+      <div class="not-body">
+        <ul class="not-list">
+          <li>No share links, no hosting</li>
+          <li>No timeline editor, no trimming</li>
+          <li>No cloud storage or sync</li>
+          <li>No account, sign-up, or team plan</li>
+          <li>No AI summaries or transcripts</li>
+          <li>No telemetry, no analytics</li>
+        </ul>
+        <p class="not-note">
+          If you need a link in a client's inbox ten seconds after you stop recording,
+          use Loom — that is what it is good at. If you want a file you own, on a machine
+          you control, with no service between you and it, use Halo.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────────────────── how it works ─────────────────────── -->
+  <section id="how" class="section">
+    <div class="wrap">
+      <header class="sec-head">
+        <p class="eyebrow">How it works</p>
+        <h2>The whole pipeline, end to end.</h2>
+        <p class="sec-lead">
+          Four stages, all on-device. This is every place your video goes between the
+          glass and the file.
+        </p>
+      </header>
+
+      <ol class="pipeline">
+        <li class="stage">
+          <span class="stage-num" aria-hidden="true">01</span>
+          <p class="stage-api">ScreenCaptureKit</p>
+          <h3>Capture the screen</h3>
+          <p>macOS hands Halo the display's frames directly from the window server through an
+          <code>SCStream</code>. ScreenCaptureKit only delivers a frame when the screen
+          changes, so Halo re-submits the last frame on a fixed cadence and the file's
+          duration tracks the wall clock.</p>
+        </li>
+        <li class="stage">
+          <span class="stage-num" aria-hidden="true">02</span>
+          <p class="stage-api">AVFoundation</p>
+          <h3>Capture the camera</h3>
+          <p>The webcam arrives as a separate stream at its own native frame rate, kept
+          independent of the screen capture so neither one stalls the other.</p>
+        </li>
+        <li class="stage">
+          <span class="stage-num" aria-hidden="true">03</span>
+          <p class="stage-api">Core Image + Metal</p>
+          <h3>Mask and composite</h3>
+          <p>Core Image, on a persistent Metal-backed <code>CIContext</code>, masks the camera
+          frame into a circle and composites that bubble over the screen frame on the GPU.
+          Two images in, one pixel buffer out, every frame.</p>
+        </li>
+        <li class="stage">
+          <span class="stage-num" aria-hidden="true">04</span>
+          <p class="stage-api">VideoToolbox</p>
+          <h3>Encode to MP4</h3>
+          <p>Composited frames go straight to the hardware encoder on Apple's media
+          engine and out to an MP4 on your disk. The file is complete the moment you
+          stop.</p>
+        </li>
+      </ol>
+
+      <p class="pipeline-note">
+        Note what is not in that list: a network request, a background upload, or a
+        server that has to be up for your recording to exist.
+      </p>
+    </div>
+  </section>
+
+  <!-- ─────────────────────── vs loom ─────────────────────── -->
+  <section id="vs-loom" class="section section-inset">
+    <div class="wrap">
+      <header class="sec-head">
+        <p class="eyebrow">Comparison</p>
+        <h2>Halo vs Loom, honestly.</h2>
+        <p class="sec-lead">
+          Loom is a good product solving a different problem. A rigged table would not
+          help you pick, so here is where each one actually wins.
+        </p>
+      </header>
+
+      <div class="table-wrap" tabindex="0" role="region" aria-label="Halo compared with Loom">
+        <table class="cmp">
+          <caption class="visually-hidden">Feature comparison between Halo and Loom</caption>
+          <thead>
+            <tr>
+              <th scope="col">Feature</th>
+              <th scope="col" class="col-halo">Halo</th>
+              <th scope="col">Loom</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th scope="row">Price</th>
+              <td class="col-halo">Free, forever, MIT licensed</td>
+              <td>Free tier, paid plans above it</td>
+            </tr>
+            <tr>
+              <th scope="row">Account required</th>
+              <td class="col-halo">None</td>
+              <td>Yes, sign-up required</td>
+            </tr>
+            <tr>
+              <th scope="row">Where the video lives</th>
+              <td class="col-halo">On your disk, as MP4</td>
+              <td>On Loom's servers</td>
+            </tr>
+            <tr>
+              <th scope="row">Instant share link</th>
+              <td class="col-halo">No — you send the file</td>
+              <td>Yes, the moment you stop <b class="win">Loom wins</b></td>
+            </tr>
+            <tr>
+              <th scope="row">Built-in editor and trimming</th>
+              <td class="col-halo">No editor at all</td>
+              <td>Yes <b class="win">Loom wins</b></td>
+            </tr>
+            <tr>
+              <th scope="row">Viewer analytics and comments</th>
+              <td class="col-halo">No</td>
+              <td>Yes <b class="win">Loom wins</b></td>
+            </tr>
+            <tr>
+              <th scope="row">Platforms</th>
+              <td class="col-halo">macOS 15+ only</td>
+              <td>Mac, Windows, browser, mobile <b class="win">Loom wins</b></td>
+            </tr>
+            <tr>
+              <th scope="row">Circular webcam bubble</th>
+              <td class="col-halo">Yes</td>
+              <td>Yes</td>
+            </tr>
+            <tr>
+              <th scope="row">Capture resolution</th>
+              <td class="col-halo">Up to 4K, hardware-encoded</td>
+              <td>Depends on your plan</td>
+            </tr>
+            <tr>
+              <th scope="row">Works with no internet</th>
+              <td class="col-halo">Entirely</td>
+              <td>Records offline, sharing needs the upload</td>
+            </tr>
+            <tr>
+              <th scope="row">Telemetry and analytics</th>
+              <td class="col-halo">None</td>
+              <td>Yes</td>
+            </tr>
+            <tr>
+              <th scope="row">Source code</th>
+              <td class="col-halo">Public and MIT licensed</td>
+              <td>Proprietary</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p class="fineprint">
+        Loom is a trademark of its owner. Halo is an independent project and is not
+        affiliated with, endorsed by, or connected to Loom. Loom's plans and features
+        change over time — check their site for current details before you decide.
+      </p>
+    </div>
+  </section>
+
+  <!-- ─────────────────────── install ─────────────────────── -->
+  <section id="install" class="section">
+    <div class="wrap install-grid">
+      <header class="sec-head sec-head-flush">
+        <p class="eyebrow">Install</p>
+        <h2>Build it in four commands.</h2>
+        <p class="sec-lead">
+          Halo ships as source. You compile it once and you have an app bundle macOS
+          will grant screen recording to.
+        </p>
+        <ul class="reqs">
+          <li><span>macOS 15</span> (Sequoia) or later</li>
+          <li><span>Apple Silicon or Intel</span> — built and tested on Apple Silicon (M4)</li>
+          <li><span>Xcode 26 / Swift 6</span> toolchain to build from source</li>
+        </ul>
+      </header>
+
+      <div class="install-body">
+        <pre class="code" tabindex="0"><code>git clone https://github.com/techautomationpartners/halo.git
+cd halo
+swift build -c release
+Scripts/make_app.sh</code></pre>
+
+        <div class="steps">
+          <p><b>What that produces.</b> <code>swift build</code> gives you a bare
+          executable; <code>Scripts/make_app.sh</code> assembles it into
+          <code>Halo.app</code> at the repository root, with the correct
+          <code>Info.plist</code> and an ad-hoc code signature.</p>
+
+          <p><b>Why the signature matters.</b> TCC — macOS's privacy permission
+          database — ties Screen Recording, Camera, and Microphone grants to a signed
+          bundle identity. An unsigned loose binary may never appear in System Settings'
+          permission lists at all.</p>
+
+          <p><b>Then run it.</b> Halo has no dock icon and no windows. It appears in the
+          menu bar: click it, pick a screen and a camera, and record. macOS asks for the
+          permissions it needs on first launch, and manages those grants itself —
+          nothing about them leaves your machine.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────────────────── faq ─────────────────────── -->
+  <section id="faq" class="section section-inset">
+    <div class="wrap faq-grid">
+      <header class="sec-head sec-head-flush">
+        <p class="eyebrow">FAQ</p>
+        <h2>Questions worth answering.</h2>
+      </header>
+
+      <div class="faq-list">
+        <details>
+          <summary>Is Halo really free?</summary>
+          <p>Yes. Halo is MIT licensed and free for anything, including commercial use.
+          There is no paid tier, no trial, and nothing to buy.</p>
+        </details>
+
+        <details>
+          <summary>Is Halo a Loom alternative?</summary>
+          <p>It replaces Loom's recording, not Loom's platform. There are no share links,
+          no hosting, and no editor. If your workflow ends with a video file, Halo
+          replaces Loom completely. If it ends with a link you send someone, it does
+          not.</p>
+        </details>
+
+        <details>
+          <summary>Does Halo upload my recordings anywhere?</summary>
+          <p>No. Halo has no networking code at all. Recordings are written to your disk
+          and stay there. There is no cloud, no telemetry, and no analytics.</p>
+        </details>
+
+        <details>
+          <summary>Do I need an account to use Halo?</summary>
+          <p>No. There is no sign-up, no login, and no account system. You launch the app
+          and record.</p>
+        </details>
+
+        <details>
+          <summary>What version of macOS does Halo need?</summary>
+          <p>macOS 15 (Sequoia) or later, because Halo captures the microphone through
+          <code>SCStreamConfiguration.captureMicrophone</code>, which was introduced in
+          macOS 15. It runs on Apple Silicon and Intel Macs, and is built and tested on
+          Apple Silicon (M4).</p>
+        </details>
+
+        <details>
+          <summary>What format and resolution does Halo record?</summary>
+          <p>MP4, at 1080p or 4K. Encoding is done in hardware through
+          VideoToolbox.</p>
+        </details>
+
+        <details>
+          <summary>Can I trim or edit a recording inside Halo?</summary>
+          <p>No. Halo has no timeline editor. It hands you a standard MP4 that opens in
+          any editor you already use.</p>
+        </details>
+
+        <details>
+          <summary>Can I use Halo at work or inside a commercial product?</summary>
+          <p>Yes. The MIT license permits commercial use, modification, and
+          redistribution. The only obligation is keeping the copyright notice with the
+          source.</p>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────────────────── license ─────────────────────── -->
+  <section id="license" class="section">
+    <div class="wrap">
+      <div class="license-block">
+      <p class="eyebrow">License</p>
+      <h2>MIT. That's the whole deal.</h2>
+      <p class="license-copy">
+        Copyright © 2026 Aman Meghrajani. Use it personally or commercially, modify it,
+        fork it, rebrand it, ship it inside a product you charge for. Keep the copyright
+        notice with the source and you have met every obligation the license imposes.
+      </p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="https://github.com/techautomationpartners/halo">Read the source</a>
+        <a class="btn btn-ghost" href="https://github.com/techautomationpartners/halo/blob/main/LICENSE">Read the license</a>
+      </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap foot-inner">
+    <div class="foot-brand">
+      <img src="assets/halo-icon-1024.png" alt="The Halo app icon: a coral-to-violet ring on a dark rounded square." width="40" height="40">
+      <div>
+        <p class="foot-word">Halo</p>
+        <p class="foot-sub">Free, local screen recorder for Mac.</p>
+      </div>
+    </div>
+    <nav class="foot-nav" aria-label="Footer">
+      <a href="#features">What it does</a>
+      <a href="#how">How it works</a>
+      <a href="#vs-loom">vs Loom</a>
+      <a href="#install">Install</a>
+      <a href="#faq">FAQ</a>
+      <a href="https://github.com/techautomationpartners/halo">GitHub</a>
+    </nav>
+    <p class="foot-legal">
+      MIT licensed · Built in the open · This site loads nothing from anywhere else.
+    </p>
+  </div>
+</footer>
+
+</body>
+</html>

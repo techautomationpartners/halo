@@ -1,0 +1,9 @@
+.build/
+.swiftpm/
+.index-build/
+DerivedData/
+*.xcodeproj
+*.xcworkspace
+.DS_Store
+Halo.app/
+*.mp4
