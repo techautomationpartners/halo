@@ -91,8 +91,40 @@ cat > "${CONTENTS_DIR}/Info.plist" <<PLIST
 </plist>
 PLIST
 
-echo "==> Ad-hoc code signing ${APP_NAME}.app"
-codesign --force --deep --sign - "${APP_DIR}"
+# Signing identity decides whether your permissions survive a rebuild.
+#
+# Ad-hoc (`--sign -`) produces a designated requirement of `cdhash H"..."` — the
+# literal hash of the binary. TCC stores the grant against that, so EVERY rebuild
+# looks like a brand-new app and Screen Recording silently reverts to denied. The
+# app then reports "access was denied" even though the System Settings toggle is on.
+#
+# A real identity produces an identity-based requirement instead:
+#   identifier "com.amanmeghrajani.halo" and anchor apple generic and
+#   certificate leaf[subject.CN] = "Apple Development: ..."
+# which is stable across rebuilds, so the grant sticks.
+#
+# Override with:  HALO_SIGN_IDENTITY="Developer ID Application: ..." ./Scripts/make_app.sh
+# Force ad-hoc with: HALO_SIGN_IDENTITY=-
+if [ -z "${HALO_SIGN_IDENTITY:-}" ]; then
+  HALO_SIGN_IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null \
+    | grep -E 'Developer ID Application|Apple Development' \
+    | grep -v CSSMERR \
+    | head -1 \
+    | sed -E 's/.*"(.*)".*/\1/')
+fi
+
+if [ -n "${HALO_SIGN_IDENTITY}" ] && [ "${HALO_SIGN_IDENTITY}" != "-" ]; then
+  echo "==> Code signing ${APP_NAME}.app as: ${HALO_SIGN_IDENTITY}"
+  codesign --force --deep --options runtime --sign "${HALO_SIGN_IDENTITY}" "${APP_DIR}"
+else
+  echo "==> Ad-hoc code signing ${APP_NAME}.app"
+  echo "    WARNING: ad-hoc signatures change on every rebuild, so macOS will forget"
+  echo "    your Screen Recording / Camera grants each time. If you have an Apple"
+  echo "    Development or Developer ID certificate, this script picks it up"
+  echo "    automatically. Otherwise, after each rebuild run:"
+  echo "      tccutil reset ScreenCapture com.amanmeghrajani.halo"
+  codesign --force --deep --sign - "${APP_DIR}"
+fi
 
 echo "==> Done: ${APP_DIR}"
 echo "    Move it to /Applications, then launch it once to trigger the"
