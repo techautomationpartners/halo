@@ -365,6 +365,9 @@ final class HaloSettingsStore {
         static let config = "halo.recordingConfig.v1"
         static let displayID = "halo.selectedDisplayID.v1"
         static let cameraUniqueID = "halo.selectedCameraUniqueID.v1"
+        /// Sentinel written when the user explicitly picks "None", so that an absent
+        /// key can still mean "never chosen".
+        static let noCamera = "halo.camera.none"
     }
 
     var config: RecordingConfig {
@@ -391,11 +394,21 @@ final class HaloSettingsStore {
         set { defaults.set(Int(newValue ?? 0), forKey: Key.displayID) }
     }
 
-    /// nil means "None" — no camera bubble.
+    /// Stored as a device uniqueID, or `Key.noCamera` when the user has explicitly
+    /// chosen "None". The key being ABSENT is a third, distinct state: the user has
+    /// never chosen, and first run defaults to the built-in camera (see
+    /// `AppDelegate.selectedCamera()`). Returning nil for "absent" and "None" alike
+    /// is what shipped the headline feature switched off.
     var selectedCameraUniqueID: String? {
-        get { defaults.string(forKey: Key.cameraUniqueID) }
-        set { defaults.set(newValue, forKey: Key.cameraUniqueID) }
+        get {
+            guard let raw = defaults.string(forKey: Key.cameraUniqueID) else { return nil }
+            return raw == Key.noCamera ? nil : raw
+        }
+        set { defaults.set(newValue ?? Key.noCamera, forKey: Key.cameraUniqueID) }
     }
+
+    /// False until the user picks something in the Camera menu — including "None".
+    var hasChosenCamera: Bool { defaults.object(forKey: Key.cameraUniqueID) != nil }
 }
 
 // MARK: - Recordings folder
@@ -765,7 +778,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func buildCameraMenu() -> NSMenu {
         let menu = NSMenu()
-        let selectedID = settings.selectedCameraUniqueID
+        // Reflect what will ACTUALLY be used, so the checkmark matches reality on first
+        // run rather than sitting on "None" while a camera is in fact selected.
+        let selectedID = settings.hasChosenCamera
+            ? settings.selectedCameraUniqueID
+            : selectedCamera()?.uniqueID
 
         let noneItem = NSMenuItem(title: "None", action: #selector(selectCamera), keyEquivalent: "")
         noneItem.target = self
@@ -887,6 +904,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func selectedCamera() -> AVCaptureDevice? {
+        // First run: default to the built-in camera. The circular webcam bubble is the
+        // entire point of Halo, and defaulting to "None" meant a new user's first
+        // recording came out as a plain screen capture and looked broken.
+        guard settings.hasChosenCamera else {
+            return availableCameras.first(where: { $0.deviceType == .builtInWideAngleCamera })
+                ?? availableCameras.first
+        }
         guard let id = settings.selectedCameraUniqueID else { return nil }
         return availableCameras.first(where: { $0.uniqueID == id })
     }
@@ -915,8 +939,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // the display list is empty until Screen Recording has been granted.
         await refreshDisplaysAndCameras()
 
-        let wantsCamera = settings.selectedCameraUniqueID != nil
         let camera = selectedCamera()
+        let wantsCamera = camera != nil
         let report = await runPermissionsPreflight(includeCamera: wantsCamera)
         guard report.canRecord else { return }
 
