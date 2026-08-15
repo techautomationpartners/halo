@@ -811,3 +811,45 @@ h3 {
   body { background: #fff; color: #000; }
   .faq-list details p { display: block; }
 }
+
+/* ---------- install options ---------------------------------------------- */
+/* Three distinct blocks rather than prose: the install path a visitor needs
+   depends entirely on who they are, and burying Homebrew inside a paragraph
+   made the fastest route the hardest one to find. */
+.opt {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: clamp(20px, 2.6vw, 28px);
+  background: var(--bg-1);
+  margin-bottom: 18px;
+}
+.opt:last-of-type { margin-bottom: 0; }
+
+.opt-head {
+  display: flex; align-items: center; gap: 12px;
+  flex-wrap: wrap; margin-bottom: 10px;
+}
+.opt-num {
+  font-family: var(--mono); font-size: 0.78rem;
+  color: var(--muted); letter-spacing: 0.08em;
+}
+.opt-head h3 {
+  margin: 0; font-size: 1.16rem; letter-spacing: -0.02em;
+}
+.opt-tag {
+  font-family: var(--mono); font-size: 0.66rem;
+  letter-spacing: 0.1em; color: var(--muted);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px; padding: 3px 9px;
+}
+.opt-lead { margin: 0 0 14px; color: var(--muted); }
+.opt-cta { margin: 0 0 14px; }
+.opt-steps { margin: 14px 0 0; padding-left: 1.2em; color: var(--muted); }
+.opt-steps li { margin-bottom: 6px; }
+.opt-note { margin: 14px 0 0; font-size: 0.93rem; color: var(--muted); }
+.opt-after { margin-top: 22px; }
+
+@media (max-width: 640px) {
+  .opt-head { gap: 8px; }
+  .opt-tag { display: none; }   /* the label is decorative; the heading carries it */
+}

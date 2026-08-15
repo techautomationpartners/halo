@@ -436,55 +436,67 @@
       </header>
 
       <div class="install-body">
-        <div class="steps">
-          <p><b>1. Download the installer</b> — easiest, no terminal needed.</p>
-        </div>
 
-        <p style="margin:0 0 1.4rem">
-          <a class="btn btn-primary" href="https://github.com/techautomationpartners/halo/releases/latest">
-            Download Halo for Mac
-          </a>
-        </p>
-
-        <div class="steps">
-          <p>Open the downloaded file, drag <b>Halo</b> onto the <b>Applications</b>
-          folder, then open your Applications folder and
-          <b>right-click Halo and choose “Open”</b>. Click “Open” again when macOS asks.</p>
-
-          <p><b>That right-click matters.</b> If you double-click Halo the ordinary way
-          the very first time, macOS may say Halo <em>“is damaged and can’t be opened.”</em>
-          It is not damaged, and nothing is wrong with your Mac. macOS shows that for
-          any app that has not been notarized by Apple, which costs a developer
-          $99 a year. Right-click → Open tells macOS you trust it. You only ever do
-          this once.</p>
-
-          <p><b>2. Homebrew</b> — if you already use it, this handles everything,
-          including that first-launch step.</p>
-
+        <div class="opt">
+          <div class="opt-head">
+            <span class="opt-num">01</span>
+            <h3>Homebrew</h3>
+            <span class="opt-tag">RECOMMENDED</span>
+          </div>
+          <p class="opt-lead">One command. Homebrew also clears the macOS quarantine
+          flag for you, so Halo opens normally the first time — no right-click needed.</p>
           <pre class="code" tabindex="0"><code>brew tap techautomationpartners/halo
 brew install --cask halo</code></pre>
+          <p class="opt-note">Don't have Homebrew? Install it first from
+          <a href="https://brew.sh">brew.sh</a>. If Homebrew asks you to trust the tap,
+          run <code>brew trust --cask techautomationpartners/halo/halo</code> and install
+          again — that check applies to every tap outside Homebrew's core repository.</p>
+        </div>
 
-          <p>If Homebrew asks you to trust the tap, run
-          <code>brew trust --cask techautomationpartners/halo/halo</code> and install again.
-          Homebrew added that check recently for any tap outside its core repository.</p>
+        <div class="opt">
+          <div class="opt-head">
+            <span class="opt-num">02</span>
+            <h3>Download the installer</h3>
+            <span class="opt-tag">NO TERMINAL</span>
+          </div>
+          <p class="opt-lead">If you have never used a terminal, take this one.</p>
+          <p class="opt-cta">
+            <a class="btn btn-primary" href="https://github.com/techautomationpartners/halo/releases/latest">
+              Download Halo for Mac
+            </a>
+          </p>
+          <ol class="opt-steps">
+            <li>Open the downloaded file and drag <b>Halo</b> onto the <b>Applications</b> folder.</li>
+            <li>Open your Applications folder.</li>
+            <li><b>Right-click Halo and choose “Open”</b>, then click “Open” again.</li>
+          </ol>
+          <p class="opt-note"><b>Step 3 matters.</b> Double-clicking the ordinary way the
+          first time may make macOS say Halo <em>“is damaged and can’t be opened.”</em>
+          It is not damaged and nothing is wrong with your Mac — macOS shows that for any
+          app not notarized by Apple, which costs a developer $99 a year. Right-click →
+          Open tells macOS you trust it, and you only ever do it once.</p>
+        </div>
 
-          <p><b>3. Build from source</b> — needs Xcode 26 / Swift 6.</p>
-
+        <div class="opt">
+          <div class="opt-head">
+            <span class="opt-num">03</span>
+            <h3>Build from source</h3>
+            <span class="opt-tag">XCODE 26 / SWIFT 6</span>
+          </div>
           <pre class="code" tabindex="0"><code>git clone https://github.com/techautomationpartners/halo.git
 cd halo
 swift build -c release
 Scripts/make_app.sh</code></pre>
-
-          <p><code>Scripts/make_app.sh</code> assembles <code>Halo.app</code> at the
-          repository root and signs it. The signature matters: macOS ties screen
+          <p class="opt-note"><code>Scripts/make_app.sh</code> assembles
+          <code>Halo.app</code> and signs it. The signature matters: macOS ties screen
           recording and camera permissions to a signed bundle identity, and an unsigned
           binary may never appear in the permission list at all.</p>
-
-          <p><b>Then run it.</b> Halo has no Dock icon and no window — it lives in the
-          menu bar at the top of your screen, as a small ring. Click it, pick a screen
-          and a camera, and record. Your files land in your <b>Movies</b> folder, in a
-          folder called <b>Halo</b>. Nothing is uploaded anywhere, ever.</p>
         </div>
+
+        <p class="opt-after"><b>Then run it.</b> Halo has no Dock icon and no window — it
+        lives in the menu bar at the top of your screen, as a small ring. Click it, pick a
+        screen and a camera, and record. Files land in your <b>Movies</b> folder, in a
+        folder called <b>Halo</b>. Nothing is uploaded anywhere, ever.</p>
       </div>
     </div>
   </section>
