@@ -1,10 +1,15 @@
 // Recorder.swift
 // AVAssetWriter-based MP4 muxer: one hardware-encoded video track fed from
-// the compositor through an AVAssetWriterInputPixelBufferAdaptor, plus up to
-// two SEPARATE audio tracks (system audio and microphone).
+// the compositor through an AVAssetWriterInputPixelBufferAdaptor, plus the
+// audio tracks described by `RecordingConfig.audioTrackMode`:
+//   .separate — up to two SEPARATE audio tracks (system audio and microphone),
+//               each on its own AVAssetWriterInput. Unchanged behaviour.
+//   .mixed    — ONE audio track, fed exclusively by `AudioMixer`, which has
+//               already resampled both sources into one canonical format and
+//               summed them on a single timeline.
 //
 // This file owns project traps #2 (fixed-cadence submission), #3 (PTS
-// normalization contract), #4 (separate audio inputs), and the writer half of
+// normalization contract), #4 (audio track layout), and the writer half of
 // #6 (color tags). See the inline TRAP comments below.
 
 import AVFoundation
@@ -34,10 +39,18 @@ public final class Recorder: Recording, @unchecked Sendable {
         let writer: AVAssetWriter
         let videoInput: AVAssetWriterInput
         let videoAdaptor: AVAssetWriterInputPixelBufferAdaptor
-        /// TRAP #4: two distinct inputs, never one shared input. See
-        /// `makeAudioInput` for the full reasoning.
+        /// TRAP #4 (`.separate` mode): two distinct inputs, never one shared
+        /// input. See `makeAudioInput` for the full reasoning. Both are nil in
+        /// `.mixed` mode.
         let systemAudioInput: AVAssetWriterInput?
         let microphoneInput: AVAssetWriterInput?
+        /// TRAP #4 (`.mixed` mode): the single audio input. It is safe ONLY
+        /// because `mixer` is the sole producer feeding it and everything the
+        /// mixer emits carries one identical CMFormatDescription on one
+        /// monotonic timeline — no raw capture buffer ever reaches it. nil in
+        /// `.separate` mode.
+        let mixedAudioInput: AVAssetWriterInput?
+        let mixer: AudioMixer?
         let config: RecordingConfig
         let outputURL: URL
     }
@@ -50,6 +63,8 @@ public final class Recorder: Recording, @unchecked Sendable {
         public var videoFramesDropped: Int = 0
         public var systemAudioAppended: Int = 0
         public var microphoneAppended: Int = 0
+        /// Mixed blocks written to the single audio track (`.mixed` mode only).
+        public var mixedAudioAppended: Int = 0
         public var audioDropped: Int = 0
         /// Duration of the written video track so far, derived from the last
         /// accepted presentation timestamp.
@@ -77,6 +92,7 @@ public final class Recorder: Recording, @unchecked Sendable {
     private var lastVideoPTS: CMTime = .invalid
     private var lastSystemAudioPTS: CMTime = .invalid
     private var lastMicrophonePTS: CMTime = .invalid
+    private var lastMixedAudioPTS: CMTime = .invalid
     /// The FIRST error that pushed this recorder into `.failed`. Kept so
     /// `stop()` can report the real cause (a full disk, a revoked permission)
     /// instead of a useless "called in state failed".
@@ -186,36 +202,77 @@ public final class Recorder: Recording, @unchecked Sendable {
         writer.add(videoInput)
 
         // ── TRAP #4 ────────────────────────────────────────────────────────
-        // System audio and microphone MUST be two separate AVAssetWriterInputs
-        // and therefore two separate tracks. Apple DTS has confirmed that
-        // feeding ScreenCaptureKit's `.audio` and `.microphone` sample buffers
-        // into a single input produces a corrupt, unplayable MP4: the two
+        // ScreenCaptureKit's `.audio` and `.microphone` sample buffers MUST
+        // NEVER both be appended to one AVAssetWriterInput. Apple DTS has
+        // confirmed that doing so produces a corrupt, unplayable MP4: the two
         // streams carry different CMFormatDescriptions (channel count and
         // layout), run off different clocks, and interleave non-monotonically.
         // AVAssetWriterInput assumes one continuous, format-stable stream per
-        // input, so the muxed result gets nonsense sample tables. There is no
-        // "mix them first" shortcut here — mixing would need a real
-        // sample-rate-converting mixer; two tracks is the supported answer, and
-        // editors handle multi-track audio natively anyway.
+        // input, so the muxed result gets nonsense sample tables.
+        //
+        // The two modes below are the two legal answers to that, and the
+        // distinction between them is the entire point:
+        //
+        //   .separate — two inputs, two tracks. Editors handle multi-track
+        //     audio natively. The trap is avoided by never letting the streams
+        //     meet.
+        //
+        //   .mixed — ONE input, but the raw capture buffers still never touch
+        //     it. `AudioMixer` converts BOTH sources to one canonical format
+        //     (48 kHz stereo Float32), aligns them by normalized PTS on a
+        //     single sample-accurate timeline, sums them, and emits fresh
+        //     uniformly-formatted buffers. What reaches this input is one
+        //     format, one clock, one monotonic stream — which is exactly the
+        //     invariant AVAssetWriterInput requires. Pointing the two append
+        //     paths at a shared input WITHOUT that mixer would reintroduce the
+        //     corruption bug verbatim; the single input here is only sound
+        //     because `appendAudio` routes every mixed-mode frame through the
+        //     mixer and nothing else can write to it.
         // ───────────────────────────────────────────────────────────────────
         var systemAudioInput: AVAssetWriterInput?
-        if config.captureSystemAudio {
-            let input = Recorder.makeAudioInput()
-            guard writer.canAdd(input) else {
-                throw HaloError.writeFailed("AVAssetWriter rejected the system-audio input")
-            }
-            writer.add(input)
-            systemAudioInput = input
-        }
-
         var microphoneInput: AVAssetWriterInput?
-        if config.captureMicrophone {
-            let input = Recorder.makeAudioInput()
-            guard writer.canAdd(input) else {
-                throw HaloError.writeFailed("AVAssetWriter rejected the microphone input")
+        var mixedAudioInput: AVAssetWriterInput?
+        var mixer: AudioMixer?
+
+        switch config.audioTrackMode {
+        case .separate:
+            if config.captureSystemAudio {
+                let input = Recorder.makeAudioInput()
+                guard writer.canAdd(input) else {
+                    throw HaloError.writeFailed("AVAssetWriter rejected the system-audio input")
+                }
+                writer.add(input)
+                systemAudioInput = input
             }
-            writer.add(input)
-            microphoneInput = input
+
+            if config.captureMicrophone {
+                let input = Recorder.makeAudioInput()
+                guard writer.canAdd(input) else {
+                    throw HaloError.writeFailed("AVAssetWriter rejected the microphone input")
+                }
+                writer.add(input)
+                microphoneInput = input
+            }
+
+        case .mixed:
+            // Only add a track if at least one source is actually being
+            // captured; a mixed track with no sources would be an empty audio
+            // track, which some players treat as a broken file.
+            if config.captureSystemAudio || config.captureMicrophone {
+                let input = Recorder.makeAudioInput()
+                guard writer.canAdd(input) else {
+                    throw HaloError.writeFailed("AVAssetWriter rejected the mixed-audio input")
+                }
+                writer.add(input)
+                mixedAudioInput = input
+                // Declaring which sources are expected is what lets the mixer
+                // WAIT briefly for a source that is slow to warm up, instead of
+                // writing its first buffers as silence.
+                mixer = AudioMixer(
+                    mixesMicrophone: config.captureMicrophone,
+                    mixesSystemAudio: config.captureSystemAudio
+                )
+            }
         }
 
         guard writer.startWriting() else {
@@ -236,6 +293,8 @@ public final class Recorder: Recording, @unchecked Sendable {
             videoAdaptor: adaptor,
             systemAudioInput: systemAudioInput,
             microphoneInput: microphoneInput,
+            mixedAudioInput: mixedAudioInput,
+            mixer: mixer,
             config: config,
             outputURL: outputURL
         )
@@ -245,6 +304,7 @@ public final class Recorder: Recording, @unchecked Sendable {
         lastVideoPTS = .invalid
         lastSystemAudioPTS = .invalid
         lastMicrophonePTS = .invalid
+        lastMixedAudioPTS = .invalid
         failureError = nil
 
         RecorderRegistry.shared.register(self)
@@ -375,10 +435,16 @@ public final class Recorder: Recording, @unchecked Sendable {
         try appendAudio(frame)
     }
 
-    /// Shared body for the two public audio entry points. The *input* is
-    /// selected from `frame.source`, so the two sources can never land on the
-    /// same AVAssetWriterInput (TRAP #4) — the only shared thing here is the
-    /// bookkeeping, not the track.
+    /// Shared body for the two public audio entry points.
+    ///
+    /// In `.separate` mode the *input* is selected from `frame.source`, so the
+    /// two sources can never land on the same AVAssetWriterInput (TRAP #4) —
+    /// the only shared thing is the bookkeeping, not the track.
+    ///
+    /// In `.mixed` mode the frame is handed to the mixer instead and never
+    /// touches a writer input directly; only the mixer's canonical output is
+    /// appended. The two entry points stay distinct either way, so a caller
+    /// cannot accidentally route a raw buffer onto the mixed track.
     private func appendAudio(_ frame: AudioFrame) throws {
         lock.lock()
         defer { lock.unlock() }
@@ -387,6 +453,24 @@ public final class Recorder: Recording, @unchecked Sendable {
             if let failureError { throw failureError }
             throw HaloError.invalidState("append audio called with no active recording session")
         }
+
+        if let mixer = session.mixer, let mixedInput = session.mixedAudioInput {
+            if let error = session.writer.error {
+                throw failLocked("AVAssetWriter failed: \(error.localizedDescription)")
+            }
+            // Every block the mixer hands back is already canonical-format and
+            // strictly later than the previous one, so appending them in order
+            // is all that is required.
+            for buffer in mixer.push(frame) {
+                try appendMixedLocked(buffer, to: mixedInput, session: session)
+            }
+            switch frame.source {
+            case .systemAudio: _stats.systemAudioAppended += 1
+            case .microphone: _stats.microphoneAppended += 1
+            }
+            return
+        }
+
         let input: AVAssetWriterInput?
         let previous: CMTime
         switch frame.source {
@@ -423,6 +507,93 @@ public final class Recorder: Recording, @unchecked Sendable {
         case .microphone:
             lastMicrophonePTS = frame.presentationTime
             _stats.microphoneAppended += 1
+        }
+    }
+
+    /// Tells the mixer that one capture stream has finished for good, so it
+    /// stops waiting on that source.
+    ///
+    /// The mixer otherwise has to INFER it, from a source having delivered
+    /// nothing for `staleTimeoutSeconds` — which stalls the mixed track for
+    /// that whole second at the end of every source that finishes early. This
+    /// says it exactly and immediately instead.
+    ///
+    /// A no-op in `.separate` mode (no mixer) and after the session is gone.
+    public func audioSourceDidFinish(_ source: AudioSourceKind) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let session, _state == .recording,
+              let mixer = session.mixer, let input = session.mixedAudioInput
+        else { return }
+        // Ending a lane can immediately unblock blocks that were only waiting
+        // on it, so whatever comes back is written now rather than left for the
+        // flush at stop.
+        for buffer in mixer.endLane(source) {
+            try? appendMixedLocked(buffer, to: input, session: session)
+        }
+    }
+
+    /// Appends one mixed block. Caller must hold `lock`.
+    private func appendMixedLocked(
+        _ buffer: CMSampleBuffer,
+        to input: AVAssetWriterInput,
+        session: Session
+    ) throws {
+        let pts = CMSampleBufferGetPresentationTimeStamp(buffer)
+        // The mixer already guarantees monotonicity; this is a cheap assertion
+        // that a bug there can never corrupt the track.
+        if lastMixedAudioPTS.isValid, pts <= lastMixedAudioPTS {
+            _stats.audioDropped += 1
+            return
+        }
+        guard input.isReadyForMoreMediaData else {
+            // Dropping a mixed block leaves a ~21 ms hole in the track rather
+            // than shifting everything after it, because the next block's PTS
+            // is absolute — the remaining audio stays in sync with the video.
+            _stats.audioDropped += 1
+            return
+        }
+        guard input.append(buffer) else {
+            let reason = session.writer.error?.localizedDescription ?? "unknown error"
+            throw failLocked("Failed to append mixed audio sample: \(reason)")
+        }
+        lastMixedAudioPTS = pts
+        _stats.mixedAudioAppended += 1
+    }
+
+    /// Drains the mixer's residue into the mixed track. Called once, after both
+    /// input streams have finished and before `markAsFinished`, from the two
+    /// teardown paths.
+    ///
+    /// Unlike the steady state, a block refused here is genuinely lost — there
+    /// is no later call to retry it — so this waits briefly for the input to
+    /// drain instead of dropping immediately. The wait is bounded: at worst it
+    /// costs `maxWait` at the very end of a recording, and the alternative is
+    /// clipping the last fraction of a second of audio off every file.
+    private func flushMixer(session: Session, maxWait: TimeInterval = 0.25) {
+        guard let mixer = session.mixer, let input = session.mixedAudioInput else { return }
+        let buffers = mixer.flush()
+        guard !buffers.isEmpty else { return }
+
+        let deadline = Date().addingTimeInterval(maxWait)
+        lock.lock()
+        defer { lock.unlock() }
+        for buffer in buffers {
+            while !input.isReadyForMoreMediaData && Date() < deadline {
+                usleep(500)
+            }
+            guard input.isReadyForMoreMediaData else {
+                _stats.audioDropped += 1
+                continue
+            }
+            let pts = CMSampleBufferGetPresentationTimeStamp(buffer)
+            if lastMixedAudioPTS.isValid, pts <= lastMixedAudioPTS { continue }
+            if input.append(buffer) {
+                lastMixedAudioPTS = pts
+                _stats.mixedAudioAppended += 1
+            } else {
+                _stats.audioDropped += 1
+            }
         }
     }
 
@@ -478,9 +649,16 @@ public final class Recorder: Recording, @unchecked Sendable {
             throw priorFailure
         }
 
+        // The engine has already drained both audio pumps by the time it calls
+        // stop(), so whatever the mixer still holds is the genuine tail of the
+        // recording — flush it before the track is closed, or every file loses
+        // whatever the mixer was still holding when the streams ended.
+        flushMixer(session: session)
+
         session.videoInput.markAsFinished()
         session.systemAudioInput?.markAsFinished()
         session.microphoneInput?.markAsFinished()
+        session.mixedAudioInput?.markAsFinished()
 
         guard wroteAnyVideo else {
             // finishWriting on an empty session produces a zero-sample, invalid
@@ -536,9 +714,15 @@ public final class Recorder: Recording, @unchecked Sendable {
             return
         }
 
+        // Abrupt exit: the pumps were NOT drained, so this only recovers what
+        // the mixer had already staged. Still worth doing — it is up to a
+        // second of audio — and it is bounded, which matters on a signal path.
+        flushMixer(session: session, maxWait: 0.05)
+
         session.videoInput.markAsFinished()
         session.systemAudioInput?.markAsFinished()
         session.microphoneInput?.markAsFinished()
+        session.mixedAudioInput?.markAsFinished()
 
         guard wroteAnyVideo else {
             session.writer.cancelWriting()

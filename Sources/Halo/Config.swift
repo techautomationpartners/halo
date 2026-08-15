@@ -174,17 +174,34 @@ public struct RecordingConfig: Sendable, Codable, Equatable {
     /// for AVCaptureSession on Apple Silicon; expose it so it's tunable
     /// without a rebuild once real measurements come in.
     public var cameraOffsetMilliseconds: Double
-    /// Whether to capture the microphone as a second, separate audio track.
+    /// Whether to capture the microphone.
     ///
     /// TRAP (project notes item 4): system audio (.audio) and microphone
-    /// (.microphone) sample buffers MUST go to two separate
-    /// AVAssetWriterInputs. They carry different CMFormatDescriptions,
+    /// (.microphone) sample buffers MUST NEVER be appended to the same
+    /// AVAssetWriterInput. They carry different CMFormatDescriptions,
     /// sample rates, and clocks; muxing them into one input produces a
-    /// corrupt, unplayable MP4 (confirmed by Apple DTS). Recorder must
-    /// expose two audio input handles, never one.
+    /// corrupt, unplayable MP4 (confirmed by Apple DTS). In
+    /// `.separate` mode Recorder therefore uses two audio input handles,
+    /// never one; in `.mixed` mode the single input is fed by the mixer,
+    /// which has already resampled both sources into one uniform format —
+    /// see `audioTrackMode`.
     public var captureMicrophone: Bool
-    /// Whether to capture system audio output as its own track.
+    /// Whether to capture system audio output.
     public var captureSystemAudio: Bool
+    /// Whether the two audio sources land on two tracks or are summed into
+    /// one. See `AudioTrackMode` — `.mixed` is NOT "both inputs share one
+    /// AVAssetWriterInput", it requires the upstream mixer.
+    public var audioTrackMode: AudioTrackMode
+    /// `AVCaptureDevice.uniqueID` of the microphone to record, or nil for
+    /// "system default input".
+    ///
+    /// Fed to `SCStreamConfiguration.microphoneCaptureDeviceID` (which is
+    /// itself `String?` with the same nil = default semantics), so nil
+    /// passes straight through. If the chosen device has been unplugged by
+    /// the time recording starts, callers must fall back to nil rather than
+    /// failing — a stale uniqueID handed to ScreenCaptureKit yields no mic
+    /// audio at all.
+    public var microphoneDeviceID: String?
     /// Explicit color space tag applied to both SCStreamConfiguration and
     /// the written video track.
     ///
@@ -195,6 +212,18 @@ public struct RecordingConfig: Sendable, Codable, Equatable {
     /// from this value; Recorder writes matching color primaries /
     /// transfer function / YCbCr matrix tags to the video track.
     public var colorSpace: ColorSpacePolicy
+    /// Version of the persisted representation this value was decoded from
+    /// (or `Self.currentSchemaVersion` for a freshly constructed one). See
+    /// the migration note on `init(from:)`.
+    public private(set) var schemaVersion: Int
+
+    /// Bump whenever a DEFAULT changes in a way existing installs must pick
+    /// up (not merely when a field is added — an added field with a sensible
+    /// default needs no bump, `decodeIfPresent` handles it).
+    ///
+    /// v1 -> v2: audio on by default. `captureSystemAudio` false -> true and
+    /// `audioTrackMode` introduced as `.mixed`.
+    public static let currentSchemaVersion = 2
 
     public init(
         outputResolution: OutputResolution = .uhd4K,
@@ -204,7 +233,9 @@ public struct RecordingConfig: Sendable, Codable, Equatable {
         encoder: EncoderSettings = .default,
         cameraOffsetMilliseconds: Double = 90,
         captureMicrophone: Bool = true,
-        captureSystemAudio: Bool = false,
+        captureSystemAudio: Bool = true,
+        audioTrackMode: AudioTrackMode = .mixed,
+        microphoneDeviceID: String? = nil,
         colorSpace: ColorSpacePolicy = .displayP3
     ) {
         self.outputResolution = outputResolution
@@ -215,10 +246,114 @@ public struct RecordingConfig: Sendable, Codable, Equatable {
         self.cameraOffsetMilliseconds = cameraOffsetMilliseconds
         self.captureMicrophone = captureMicrophone
         self.captureSystemAudio = captureSystemAudio
+        self.audioTrackMode = audioTrackMode
+        self.microphoneDeviceID = microphoneDeviceID
         self.colorSpace = colorSpace
+        self.schemaVersion = Self.currentSchemaVersion
     }
 
     public static let `default` = RecordingConfig()
+
+    // MARK: - Persistence & migration
+
+    private enum CodingKeys: String, CodingKey {
+        case outputResolution, aspectPolicy, frameRate, bubble, encoder
+        case cameraOffsetMilliseconds, captureMicrophone, captureSystemAudio
+        case audioTrackMode, microphoneDeviceID, colorSpace, schemaVersion
+    }
+
+    /// MIGRATION STRATEGY: versioned decode, NOT a bumped UserDefaults key.
+    ///
+    /// The problem: `HaloSettingsStore` persists this struct as a JSON blob
+    /// under "halo.recordingConfig.v1". Every existing install decodes that
+    /// old blob successfully, so flipping `captureSystemAudio`'s default in
+    /// the memberwise init above changes NOTHING for them — the decoder
+    /// reads the stored `false` and the user silently keeps a mic-only,
+    /// two-track setup, which is exactly the outcome this change exists to
+    /// fix.
+    ///
+    /// Why not just bump the key to ".v2": that throws away every unrelated
+    /// preference the user has set (resolution, frame rate, codec, bubble
+    /// corner/size/border color, camera offset, color space). Resetting a
+    /// dozen deliberate choices to force one audio change is a bad trade,
+    /// and it leaves a dead v1 blob in defaults forever.
+    ///
+    /// So: keep the key, carry an explicit `schemaVersion` INSIDE the blob,
+    /// decode every field with `decodeIfPresent` so old blobs (which have
+    /// none of the new keys, and no version at all) still load, and then
+    /// apply a one-time upgrade for anything below the current version.
+    /// Non-audio settings survive untouched.
+    ///
+    /// Idempotence note: the upgrade re-applies on each launch until the
+    /// blob is rewritten with the new `schemaVersion`, because we only
+    /// persist on save. That is harmless — it sets the same two values —
+    /// and the very first settings write (the store does read-modify-write
+    /// on every menu toggle, and a user disabling system audio necessarily
+    /// performs one) stamps v2 and stops it, so a deliberate opt-out is not
+    /// clobbered on the next launch.
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = RecordingConfig.default
+
+        outputResolution = try c.decodeIfPresent(OutputResolution.self, forKey: .outputResolution) ?? d.outputResolution
+        aspectPolicy = try c.decodeIfPresent(AspectPolicy.self, forKey: .aspectPolicy) ?? d.aspectPolicy
+        frameRate = try c.decodeIfPresent(Int.self, forKey: .frameRate) ?? d.frameRate
+        bubble = try c.decodeIfPresent(BubbleGeometry.self, forKey: .bubble) ?? d.bubble
+        encoder = try c.decodeIfPresent(EncoderSettings.self, forKey: .encoder) ?? d.encoder
+        cameraOffsetMilliseconds = try c.decodeIfPresent(Double.self, forKey: .cameraOffsetMilliseconds)
+            ?? d.cameraOffsetMilliseconds
+        captureMicrophone = try c.decodeIfPresent(Bool.self, forKey: .captureMicrophone) ?? d.captureMicrophone
+        captureSystemAudio = try c.decodeIfPresent(Bool.self, forKey: .captureSystemAudio) ?? d.captureSystemAudio
+        audioTrackMode = try c.decodeIfPresent(AudioTrackMode.self, forKey: .audioTrackMode) ?? d.audioTrackMode
+        // Absent key and explicit null both mean "system default input".
+        microphoneDeviceID = try c.decodeIfPresent(String.self, forKey: .microphoneDeviceID)
+        colorSpace = try c.decodeIfPresent(ColorSpacePolicy.self, forKey: .colorSpace) ?? d.colorSpace
+
+        // A blob written before versioning existed has no key here; treat it
+        // as v1, which is what it is.
+        let storedVersion = try c.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
+        schemaVersion = RecordingConfig.currentSchemaVersion
+        if storedVersion < 2 {
+            // v1 -> v2. Turn audio on for real, once. `captureMicrophone` is
+            // intentionally NOT forced: its default was already true in v1,
+            // so a stored `false` there is a deliberate user choice ("record
+            // silently"), and overriding it would start recording a room the
+            // user chose not to record. `captureSystemAudio == false`, by
+            // contrast, is indistinguishable from the old default, so the
+            // upgrade owns it.
+            captureSystemAudio = true
+            // `audioTrackMode` cannot have been stored by v1, so this is
+            // just the new default made explicit — stated here rather than
+            // left implicit so the intent of the migration is readable.
+            audioTrackMode = .mixed
+        }
+    }
+}
+
+/// How the two audio sources (microphone + system audio) are laid out in
+/// the written MP4.
+///
+/// TRAP (project notes item 4): the ONLY safe way to put both sources in one
+/// file without mixing is `.separate` — two distinct AVAssetWriterInputs.
+/// SCK's `.audio` and `.microphone` sample buffers carry different
+/// CMFormatDescriptions, potentially different sample rates/channel counts,
+/// and independent clocks, so appending both to a single AVAssetWriterInput
+/// produces a corrupt, unplayable MP4 (confirmed by Apple DTS).
+///
+/// `.mixed` therefore does NOT mean "point both append paths at one input".
+/// It means an upstream mixer converts both streams to one canonical PCM
+/// format, aligns them on normalized PTS, sums them, and emits a single
+/// uniformly-formatted stream — the writer still only ever sees one format
+/// on that input. Anything less reintroduces the corruption bug.
+public enum AudioTrackMode: String, Sendable, Codable, CaseIterable {
+    /// Microphone and system audio each get their own audio track.
+    /// Highest fidelity / post-production friendly, but many players and
+    /// upload pipelines (YouTube among them) read only the FIRST audio
+    /// track, silently dropping the other one.
+    case separate
+    /// One audio track containing mic + system audio summed together.
+    /// Plays everywhere; the default for that reason.
+    case mixed
 }
 
 /// Color space policy applied consistently to capture config and the

@@ -59,14 +59,31 @@ public enum AudioSourceKind: Sendable, Codable {
 
 /// A single audio sample buffer plus which physical source it came from.
 ///
-/// TRAP (project notes item 4): .systemAudio and .microphone frames MUST be
-/// routed to two SEPARATE AVAssetWriterInputs. Apple DTS has confirmed that
-/// muxing ScreenCaptureKit's `.audio` and `.microphone` sample buffers into
-/// one AVAssetWriterInput produces a corrupt, unplayable MP4 — they carry
-/// different CMFormatDescriptions, sample rates, and clocks. `Recording`
-/// exposes `appendSystemAudio` and `appendMicrophoneAudio` as two distinct
-/// methods for exactly this reason; never merge these streams upstream of
-/// Recorder.
+/// TRAP (project notes item 4): a RAW .systemAudio frame and a RAW
+/// .microphone frame must NEVER be appended to the same AVAssetWriterInput.
+/// Apple DTS has confirmed that muxing ScreenCaptureKit's `.audio` and
+/// `.microphone` sample buffers into one input produces a corrupt, unplayable
+/// MP4 — they carry different CMFormatDescriptions, sample rates, and clocks,
+/// and an AVAssetWriterInput assumes one format-stable, monotonic stream.
+/// `Recording` exposes `appendSystemAudio` and `appendMicrophoneAudio` as two
+/// distinct methods so the two raw streams cannot be merged by accident.
+///
+/// This is a constraint on the RAW buffers, not a ban on ever producing one
+/// audio track. `RecordingConfig.audioTrackMode` has two legal answers:
+///
+///   .separate — the two raw streams go to two inputs and two tracks. The
+///     trap is avoided by never letting them meet.
+///
+///   .mixed — `AudioMixer` (inside Recorder) converts BOTH sources to one
+///     canonical PCM format (48 kHz stereo Float32), aligns them on the
+///     normalized PTS timeline below, sums them, and emits brand-new
+///     uniformly-formatted sample buffers. Only those emitted buffers reach
+///     the single writer input; no raw capture buffer ever does. That is the
+///     whole distinction — one input fed by a mixer is correct, one input fed
+///     by two raw append paths is the corruption bug.
+///
+/// So "never merge these streams" means never merge them at the WRITER.
+/// Mixing them into a new uniform stream first is the supported path.
 public struct AudioFrame: @unchecked Sendable {
     /// See `VideoFrame.pixelBuffer` doc comment for why a non-Sendable Core
     /// Foundation type is safe to wrap here: each instance is a uniquely
@@ -203,13 +220,21 @@ public protocol Compositing: Sendable {
 
 // MARK: - Recording
 
-/// Muxes composited video and up to two separate audio tracks into an MP4
-/// via AVAssetWriter + VideoToolbox.
+/// Muxes composited video and one or two audio tracks into an MP4 via
+/// AVAssetWriter + VideoToolbox. The audio track layout is chosen by
+/// `RecordingConfig.audioTrackMode` — see `AudioFrame` for why the two
+/// layouts are not interchangeable.
 public protocol Recording: Sendable {
-    /// Creates the AVAssetWriter, its single video input, and up to two
-    /// SEPARATE audio inputs (system audio / microphone — project notes
-    /// item 4: never share one AVAssetWriterInput between them), then
-    /// starts a writing session at source time `.zero`.
+    /// Creates the AVAssetWriter, its single video input, and the audio
+    /// inputs implied by `config.audioTrackMode`, then starts a writing
+    /// session at source time `.zero`.
+    ///
+    /// - `.separate`: up to two audio inputs, one per enabled source. Raw
+    ///   buffers go straight to their own input; the two never share one
+    ///   (project notes item 4).
+    /// - `.mixed`: exactly one audio input, fed only by the internal
+    ///   `AudioMixer`'s canonical-format output. Raw capture buffers never
+    ///   reach it.
     func start(outputURL: URL, config: RecordingConfig) throws
 
     /// Appends one composited video frame. `frame.presentationTime` must
@@ -217,22 +242,44 @@ public protocol Recording: Sendable {
     /// item 3); Recorder does not re-normalize.
     func appendVideo(_ frame: VideoFrame) throws
 
-    /// Appends one system-audio sample buffer to the dedicated system-audio
-    /// track. Throws `HaloError.invalidState` if `frame.source !=
+    /// Submits one system-audio sample buffer. In `.separate` mode it is
+    /// appended to the dedicated system-audio track; in `.mixed` mode it is
+    /// handed to the mixer and only its contribution to a summed block ever
+    /// reaches a track. Throws `HaloError.invalidState` if `frame.source !=
     /// .systemAudio`.
     ///
     /// Kept as a separate method (rather than one `appendAudio` that
-    /// switches on `frame.source`) so the two audio paths cannot be
-    /// accidentally merged upstream — see project notes item 4.
+    /// switches on `frame.source`) in BOTH modes, so a caller can never
+    /// route a raw buffer onto a track it does not belong on — see project
+    /// notes item 4.
     func appendSystemAudio(_ frame: AudioFrame) throws
 
-    /// Appends one microphone sample buffer to the dedicated microphone
-    /// track, using a SEPARATE AVAssetWriterInput from `appendSystemAudio`
-    /// (project notes item 4). Throws `HaloError.invalidState` if
+    /// Submits one microphone sample buffer. In `.separate` mode it goes to
+    /// a microphone track on an AVAssetWriterInput distinct from
+    /// `appendSystemAudio`'s (project notes item 4); in `.mixed` mode it
+    /// goes to the mixer. Throws `HaloError.invalidState` if
     /// `frame.source != .microphone`.
     func appendMicrophoneAudio(_ frame: AudioFrame) throws
+
+    /// Signals that one audio source's stream has FINISHED — no further
+    /// `appendSystemAudio` / `appendMicrophoneAudio` call will ever be made for
+    /// it in this session. Callers should invoke it as soon as their pump loop
+    /// over that stream exits.
+    ///
+    /// It exists for `.mixed` mode: the mixer waits a bounded time for a source
+    /// that is merely running behind, and without an explicit end-of-stream
+    /// signal it cannot tell that case from a source that is simply over. That
+    /// forces the wait to double as a dead-source timeout, and a short timeout
+    /// silently DISCARDS late-but-valid buffers — losing exactly the narration
+    /// that mixed mode exists to preserve. Defaulted to a no-op so `.separate`
+    /// -only conformers (and test doubles) need not implement it.
+    func audioSourceDidFinish(_ source: AudioSourceKind)
 
     /// Finishes writing, closes all tracks, and finalizes the MP4 at
     /// `outputURL`.
     func stop() async throws
+}
+
+public extension Recording {
+    func audioSourceDidFinish(_ source: AudioSourceKind) {}
 }

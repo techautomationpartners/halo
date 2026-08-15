@@ -32,7 +32,16 @@ import Carbon.HIToolbox
 /// protocols, so if a concrete type's initializer ever changes shape, this
 /// is the only place that needs to follow.
 enum HaloComponentFactory {
-    static let makeScreenSource: @Sendable () -> any ScreenSourcing = { ScreenSource() }
+    /// Takes the chosen microphone's `AVCaptureDevice.uniqueID` (nil = system
+    /// default input) rather than being parameterless, because
+    /// `SCStreamConfiguration.microphoneCaptureDeviceID` can only be set while
+    /// the stream is being configured — i.e. it has to be known at
+    /// construction time. Passing it here is the whole reason the Microphone
+    /// picker has any effect; a bare `ScreenSource()` silently pins every
+    /// recording to the system default input no matter what the menu says.
+    static let makeScreenSource: @Sendable (String?) -> any ScreenSourcing = {
+        ScreenSource(microphoneDeviceID: $0)
+    }
     static let makeCameraSource: @Sendable () -> any CameraSourcing = { CameraSource() }
     static let makeCompositor: @Sendable () -> any Compositing = { Compositor() }
     static let makeRecorder: @Sendable () -> any Recording = { Recorder() }
@@ -45,6 +54,34 @@ enum HaloComponentFactory {
     /// of Halo, is unreachable. One enumeration policy, defined once, here.
     static func availableCameras() -> [AVCaptureDevice] {
         CameraSource.availableDevices()
+    }
+
+    /// Input devices offered by the Microphone picker.
+    ///
+    /// `.microphone` (macOS 14+, the successor to `.builtInMicrophone`) covers
+    /// the built-in array and most USB/Bluetooth headsets; `.external` adds
+    /// audio interfaces that enumerate as generic external devices. Both are
+    /// needed — a Mac mini or Studio has no built-in mic at all, so on those
+    /// machines `.external` is the entire list.
+    ///
+    /// The uniqueIDs returned here are exactly what
+    /// `SCStreamConfiguration.microphoneCaptureDeviceID` expects, so the list
+    /// the user sees is the list ScreenCaptureKit can actually open.
+    ///
+    /// Virtual devices that present themselves as inputs (loopback drivers
+    /// installed by Teams/Zoom/BlackHole and the like) enumerate here too, and
+    /// are intentionally left in: they are selectable inputs the user may
+    /// genuinely want, and filtering by name would be guesswork. Worth knowing
+    /// when reading a recording back, though — picking a loopback driver as
+    /// the "mic" captures system output, which with `captureSystemAudio` also
+    /// on means the same audio lands twice and sums to roughly double level in
+    /// `.mixed` mode. That is the user's choice to make, not ours to block.
+    static func availableMicrophones() -> [AVCaptureDevice] {
+        AVCaptureDevice.DiscoverySession(
+            deviceTypes: [.microphone, .external],
+            mediaType: .audio,
+            position: .unspecified
+        ).devices
     }
 }
 
@@ -122,7 +159,11 @@ actor RecordingEngine {
         }
         state = .starting
 
-        let screen = HaloComponentFactory.makeScreenSource()
+        // `config.microphoneDeviceID` has already been resolved against the
+        // devices actually attached (see AppDelegate.effectiveConfig()), so an
+        // unplugged mic arrives here as nil = system default rather than as a
+        // stale uniqueID that would yield a silent mic track.
+        let screen = HaloComponentFactory.makeScreenSource(config.microphoneDeviceID)
         let compositor = HaloComponentFactory.makeCompositor()
         let recorder = HaloComponentFactory.makeRecorder()
         var camera: (any CameraSourcing)?
@@ -250,11 +291,21 @@ actor RecordingEngine {
         // ScreenSource emits anything on these streams at all (see
         // Interfaces.swift), but we also only bother pumping the ones the
         // config asked for.
+        //
+        // Each pump reports end-of-stream when its loop exits. In `.mixed`
+        // mode that is load-bearing, not bookkeeping: the mixer waits up to a
+        // second for a source that is running behind, and a source that has
+        // simply STOPPED (mic capture ended, system audio never came up) would
+        // otherwise cost that wait at every block for the rest of the
+        // recording. Telling it the stream is over is what allows the wait to
+        // be long enough that ordinary scheduling skew between these two
+        // detached tasks never causes audio to be discarded as "too late".
         if config.captureSystemAudio {
             systemAudioPumpTask = Task.detached(priority: .userInitiated) {
                 for await frame in screen.systemAudioFrames {
                     try? recorder.appendSystemAudio(frame)
                 }
+                recorder.audioSourceDidFinish(.systemAudio)
             }
         }
         if config.captureMicrophone {
@@ -262,6 +313,7 @@ actor RecordingEngine {
                 for await frame in screen.microphoneAudioFrames {
                     try? recorder.appendMicrophoneAudio(frame)
                 }
+                recorder.audioSourceDidFinish(.microphone)
             }
         }
     }
@@ -542,6 +594,25 @@ private extension OutputResolution {
     }
 }
 
+private extension AudioTrackMode {
+    var label: String {
+        switch self {
+        case .mixed: return "Mixed (one track)"
+        case .separate: return "Separate (two tracks)"
+        }
+    }
+
+    /// Shown as a disabled explanatory row under the picker, because the
+    /// consequence of this choice is invisible until someone uploads the file
+    /// and discovers half the audio is gone.
+    var detail: String {
+        switch self {
+        case .mixed: return "Plays everywhere. Mic and system audio summed together."
+        case .separate: return "Editable in post. Some players and uploads use only the first track."
+        }
+    }
+}
+
 // MARK: - App delegate / status item controller
 
 @MainActor
@@ -553,6 +624,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private var availableDisplays: [SCDisplay] = []
     private var availableCameras: [AVCaptureDevice] = []
+    private var availableMicrophones: [AVCaptureDevice] = []
     /// Why the display list is empty, when it is. On first launch this is
     /// almost always the Screen Recording TCC refusal, and saying so is the
     /// difference between an actionable message and "No displays found".
@@ -585,8 +657,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // First-run / every-launch preflight: check everything up front
         // (includeCamera: true) so the user sees the full picture
         // immediately rather than discovering a missing grant mid-recording.
-        Task { _ = await runPermissionsPreflight(includeCamera: true) }
-        Task { await refreshDisplaysAndCameras() }
+        Task { _ = await runPermissionsPreflight(config: settings.config, includeCamera: true) }
+        Task { await refreshDisplaysAndDevices() }
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -605,17 +677,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         updateStatusItemAppearance()
         let menu = NSMenu()
         menu.delegate = self
+        // Opt out of AppKit's automatic enabling for the ROOT menu, not just
+        // the submenus. Under the default (`autoenablesItems == true`) AppKit
+        // ignores `isEnabled` entirely and enables any item whose target
+        // responds to its action — and enables a submenu parent whose submenu
+        // contains enabled items. Every `isEnabled = editingEnabled` in
+        // `populate` would then be a no-op, so mid-recording a user could flip
+        // "Include System Audio" or the Audio Track mode and watch the
+        // checkmark move while the file being written keeps the layout it was
+        // started with. The settings are a snapshot taken at
+        // `RecordingEngine.start`; the menu must not claim otherwise.
+        menu.autoenablesItems = false
         statusItem.menu = menu
         rebuildMenu()
     }
 
-    /// Displays and cameras are hot-pluggable, and this app has no window to
-    /// reopen — a stale list would mean quitting and relaunching a menu-bar
-    /// app to see a monitor or webcam that was plugged in a minute ago.
+    /// Displays, cameras and microphones are all hot-pluggable, and this app
+    /// has no window to reopen — a stale list would mean quitting and
+    /// relaunching a menu-bar app to see a monitor, webcam or headset that was
+    /// plugged in a minute ago. AVCaptureDevice's connect/disconnect
+    /// notifications are not media-type specific, so the same two observers
+    /// already cover audio devices; only the refresh body needed widening.
     private func installDeviceObservers() {
         let center = NotificationCenter.default
         let refresh: @Sendable (Notification) -> Void = { [weak self] _ in
-            Task { @MainActor in await self?.refreshDisplaysAndCameras() }
+            Task { @MainActor in await self?.refreshDisplaysAndDevices() }
         }
         for name in [
             NSApplication.didChangeScreenParametersNotification,
@@ -630,16 +716,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         guard menu === statusItem.menu else { return }
-        // Camera discovery is synchronous, so the camera list can always be
-        // current at the moment the menu opens.
+        // Camera and microphone discovery are both synchronous, so those lists
+        // can always be current at the moment the menu opens.
         availableCameras = HaloComponentFactory.availableCameras()
+        availableMicrophones = HaloComponentFactory.availableMicrophones()
         // Displays need an async ScreenCaptureKit round-trip, so this refresh
         // lands for the *next* open; the observers above cover live hot-plug,
         // and `handleToggleRecording` re-checks immediately before recording.
         // The case this specifically fixes is first launch, where the display
         // list is empty until Screen Recording is granted.
         if availableDisplays.isEmpty || displayDiscoveryError != nil {
-            Task { await refreshDisplaysAndCameras() }
+            Task { await refreshDisplaysAndDevices() }
         }
         menu.removeAllItems()
         populate(menu)
@@ -697,28 +784,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(startStopItem)
         menu.addItem(.separator())
 
+        // Every submenu is built with the same `enabled` flag its parent item
+        // carries. Belt and braces: a disabled parent already cannot be opened,
+        // but each submenu also opts out of automatic enabling itself, so no
+        // future edit can accidentally restore a live control under a greyed
+        // title.
         let displayItem = NSMenuItem(title: "Display", action: nil, keyEquivalent: "")
-        displayItem.submenu = buildDisplayMenu()
+        displayItem.submenu = buildDisplayMenu(enabled: editingEnabled)
         displayItem.isEnabled = editingEnabled
         menu.addItem(displayItem)
 
         let cameraItem = NSMenuItem(title: "Camera", action: nil, keyEquivalent: "")
-        cameraItem.submenu = buildCameraMenu()
+        cameraItem.submenu = buildCameraMenu(enabled: editingEnabled)
         cameraItem.isEnabled = editingEnabled
         menu.addItem(cameraItem)
 
         let resolutionItem = NSMenuItem(title: "Resolution", action: nil, keyEquivalent: "")
-        resolutionItem.submenu = buildResolutionMenu(config: config)
+        resolutionItem.submenu = buildResolutionMenu(config: config, enabled: editingEnabled)
         resolutionItem.isEnabled = editingEnabled
         menu.addItem(resolutionItem)
 
         let fpsItem = NSMenuItem(title: "Frame Rate", action: nil, keyEquivalent: "")
-        fpsItem.submenu = buildFrameRateMenu(config: config)
+        fpsItem.submenu = buildFrameRateMenu(config: config, enabled: editingEnabled)
         fpsItem.isEnabled = editingEnabled
         menu.addItem(fpsItem)
 
         let bubbleItem = NSMenuItem(title: "Bubble", action: nil, keyEquivalent: "")
-        bubbleItem.submenu = buildBubbleMenu(config: config)
+        bubbleItem.submenu = buildBubbleMenu(config: config, enabled: editingEnabled)
         bubbleItem.isEnabled = editingEnabled
         menu.addItem(bubbleItem)
 
@@ -736,6 +828,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         microphoneItem.isEnabled = editingEnabled
         menu.addItem(microphoneItem)
 
+        // Sits directly under "Include Microphone" and is dimmed when that is
+        // off: picking a device you have just muted is a dead end, and the
+        // adjacency makes the dependency obvious without a label explaining it.
+        let microphoneDeviceItem = NSMenuItem(title: "Microphone", action: nil, keyEquivalent: "")
+        microphoneDeviceItem.submenu = buildMicrophoneMenu(
+            config: config,
+            enabled: editingEnabled && config.captureMicrophone
+        )
+        microphoneDeviceItem.isEnabled = editingEnabled && config.captureMicrophone
+        menu.addItem(microphoneDeviceItem)
+
+        let audioTrackItem = NSMenuItem(title: "Audio Track", action: nil, keyEquivalent: "")
+        audioTrackItem.submenu = buildAudioTrackMenu(config: config, enabled: editingEnabled)
+        audioTrackItem.isEnabled = editingEnabled
+        menu.addItem(audioTrackItem)
+
         menu.addItem(.separator())
 
         let openFolderItem = NSMenuItem(title: "Open Recordings Folder", action: #selector(openRecordingsFolder), keyEquivalent: "")
@@ -749,8 +857,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(quitItem)
     }
 
-    private func buildDisplayMenu() -> NSMenu {
+    private func buildDisplayMenu(enabled: Bool) -> NSMenu {
         let menu = NSMenu()
+        menu.autoenablesItems = false
         if availableDisplays.isEmpty {
             let title: String
             if case .permissionDenied? = displayDiscoveryError as? HaloError {
@@ -771,13 +880,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             item.target = self
             item.representedObject = NSNumber(value: display.displayID)
             item.state = (display.displayID == selectedID) ? .on : .off
+            item.isEnabled = enabled
             menu.addItem(item)
         }
         return menu
     }
 
-    private func buildCameraMenu() -> NSMenu {
+    private func buildCameraMenu(enabled: Bool) -> NSMenu {
         let menu = NSMenu()
+        menu.autoenablesItems = false
         // Reflect what will ACTUALLY be used, so the checkmark matches reality on first
         // run rather than sitting on "None" while a camera is in fact selected.
         let selectedID = settings.hasChosenCamera
@@ -788,6 +899,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         noneItem.target = self
         noneItem.representedObject = nil as String?
         noneItem.state = (selectedID == nil) ? .on : .off
+        noneItem.isEnabled = enabled
         menu.addItem(noneItem)
 
         if !availableCameras.isEmpty {
@@ -797,62 +909,159 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 item.target = self
                 item.representedObject = device.uniqueID
                 item.state = (device.uniqueID == selectedID) ? .on : .off
+                item.isEnabled = enabled
                 menu.addItem(item)
             }
         }
         return menu
     }
 
-    private func buildResolutionMenu(config: RecordingConfig) -> NSMenu {
+    /// Mirrors `buildCameraMenu`, with one deliberate difference: there is no
+    /// "never chosen" sentinel.
+    ///
+    /// The camera picker needs `hasChosenCamera` because nil is ambiguous
+    /// there — it means both "the user picked None" and "the user has not
+    /// picked yet", and those want opposite first-run behaviour (no bubble vs.
+    /// default to the built-in camera). For microphones nil is unambiguous:
+    /// it means "system default input", which is BOTH a legitimate explicit
+    /// choice and exactly the right first-run default, and the two behave
+    /// identically. So `config.microphoneDeviceID == nil` is the whole state
+    /// and no extra flag is warranted.
+    private func buildMicrophoneMenu(config: RecordingConfig, enabled: Bool) -> NSMenu {
         let menu = NSMenu()
+        // Opt out of AppKit's automatic enabling for THIS submenu only. Under
+        // the default (`autoenablesItems == true`) any item with a valid
+        // target/action is enabled regardless of `isEnabled`, so setting the
+        // flag on the parent alone would leave a fully live picker sitting
+        // under a greyed-out "Microphone" title while the mic is switched off.
+        menu.autoenablesItems = false
+
+        // Check what will ACTUALLY be used, not what is stored: with the saved
+        // mic unplugged, the recording falls back to the system default, and
+        // the checkmark has to say so rather than pointing at absent hardware.
+        let selectedID = effectiveMicrophoneDeviceID(config: config)
+
+        let defaultItem = NSMenuItem(title: "System Default", action: #selector(selectMicrophone), keyEquivalent: "")
+        defaultItem.target = self
+        defaultItem.representedObject = nil as String?
+        defaultItem.state = (selectedID == nil) ? .on : .off
+        defaultItem.isEnabled = enabled
+        menu.addItem(defaultItem)
+
+        if !availableMicrophones.isEmpty {
+            menu.addItem(.separator())
+            for device in availableMicrophones {
+                let item = NSMenuItem(title: device.localizedName, action: #selector(selectMicrophone), keyEquivalent: "")
+                item.target = self
+                item.representedObject = device.uniqueID
+                item.state = (device.uniqueID == selectedID) ? .on : .off
+                item.isEnabled = enabled
+                menu.addItem(item)
+            }
+        }
+
+        // The stored pick is gone. Say so instead of leaving the user staring
+        // at a checkmark on "System Default" they never set — and keep the
+        // stored ID untouched so replugging the device silently restores it.
+        if config.microphoneDeviceID != nil, selectedID == nil {
+            menu.addItem(.separator())
+            let warning = NSMenuItem(title: "Selected microphone is not connected", action: nil, keyEquivalent: "")
+            warning.isEnabled = false
+            menu.addItem(warning)
+        }
+        return menu
+    }
+
+    private func buildAudioTrackMenu(config: RecordingConfig, enabled: Bool) -> NSMenu {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        // Explicit order rather than `allCases`: the recommended default has
+        // to come first, and `AudioTrackMode` declares `.separate` first
+        // because that was the original behaviour.
+        for mode in [AudioTrackMode.mixed, .separate] {
+            let item = NSMenuItem(title: mode.label, action: #selector(selectAudioTrackMode), keyEquivalent: "")
+            item.target = self
+            item.representedObject = mode.rawValue
+            item.state = (mode == config.audioTrackMode) ? .on : .off
+            item.isEnabled = enabled
+            menu.addItem(item)
+
+            let detail = NSMenuItem(title: mode.detail, action: nil, keyEquivalent: "")
+            detail.isEnabled = false
+            detail.indentationLevel = 1
+            detail.attributedTitle = NSAttributedString(
+                string: mode.detail,
+                attributes: [
+                    .font: NSFont.menuFont(ofSize: NSFont.smallSystemFontSize),
+                    .foregroundColor: NSColor.secondaryLabelColor,
+                ]
+            )
+            menu.addItem(detail)
+        }
+        return menu
+    }
+
+    private func buildResolutionMenu(config: RecordingConfig, enabled: Bool) -> NSMenu {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
         for resolution in OutputResolution.allCases {
             let item = NSMenuItem(title: resolution.label, action: #selector(selectResolution), keyEquivalent: "")
             item.target = self
             item.representedObject = resolution.rawValue
             item.state = (resolution == config.outputResolution) ? .on : .off
+            item.isEnabled = enabled
             menu.addItem(item)
         }
         return menu
     }
 
-    private func buildFrameRateMenu(config: RecordingConfig) -> NSMenu {
+    private func buildFrameRateMenu(config: RecordingConfig, enabled: Bool) -> NSMenu {
         let menu = NSMenu()
+        menu.autoenablesItems = false
         for fps in [30, 60] {
             let item = NSMenuItem(title: "\(fps) fps", action: #selector(selectFrameRate), keyEquivalent: "")
             item.target = self
             item.representedObject = fps
             item.state = (fps == config.frameRate) ? .on : .off
+            item.isEnabled = enabled
             menu.addItem(item)
         }
         return menu
     }
 
-    private func buildBubbleMenu(config: RecordingConfig) -> NSMenu {
+    private func buildBubbleMenu(config: RecordingConfig, enabled: Bool) -> NSMenu {
         let menu = NSMenu()
+        menu.autoenablesItems = false
 
         let cornerItem = NSMenuItem(title: "Corner", action: nil, keyEquivalent: "")
         let cornerMenu = NSMenu()
+        cornerMenu.autoenablesItems = false
         for corner in BubbleCorner.allCases {
             let item = NSMenuItem(title: corner.label, action: #selector(selectBubbleCorner), keyEquivalent: "")
             item.target = self
             item.representedObject = corner.rawValue
             item.state = (corner == config.bubble.corner) ? .on : .off
+            item.isEnabled = enabled
             cornerMenu.addItem(item)
         }
         cornerItem.submenu = cornerMenu
+        cornerItem.isEnabled = enabled
         menu.addItem(cornerItem)
 
         let sizeItem = NSMenuItem(title: "Size", action: nil, keyEquivalent: "")
         let sizeMenu = NSMenu()
+        sizeMenu.autoenablesItems = false
         let currentPreset = BubbleSizePreset.nearest(to: config.bubble.diameterFraction)
         for preset in BubbleSizePreset.allCases {
             let item = NSMenuItem(title: preset.label, action: #selector(selectBubbleSize), keyEquivalent: "")
             item.target = self
             item.representedObject = Double(preset.diameterFraction)
             item.state = (preset == currentPreset) ? .on : .off
+            item.isEnabled = enabled
             sizeMenu.addItem(item)
         }
         sizeItem.submenu = sizeMenu
+        sizeItem.isEnabled = enabled
         menu.addItem(sizeItem)
 
         return menu
@@ -874,7 +1083,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: Data refresh
 
-    private func refreshDisplaysAndCameras() async {
+    private func refreshDisplaysAndDevices() async {
         // ScreenSourceDiscovery, not `try? await SCShareableContent.current`:
         // it maps ScreenCaptureKit's -3801 onto an actionable "grant Screen
         // Recording and relaunch" message. Swallowing the throw into an empty
@@ -892,6 +1101,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         availableCameras = HaloComponentFactory.availableCameras()
+        availableMicrophones = HaloComponentFactory.availableMicrophones()
 
         rebuildMenu()
     }
@@ -915,6 +1125,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return availableCameras.first(where: { $0.uniqueID == id })
     }
 
+    /// The mic uniqueID that will actually be handed to ScreenCaptureKit: the
+    /// stored one if it is still attached, otherwise nil = system default.
+    ///
+    /// The fallback is not cosmetic. `SCStreamConfiguration.microphoneCapture-
+    /// DeviceID` set to a uniqueID that no longer exists does not throw and
+    /// does not fall back on its own — the stream comes up and simply produces
+    /// no microphone buffers, so the user records a whole session with silent
+    /// narration and no error anywhere. Resolving here, against the live
+    /// device list, is what makes an unplugged headset a degradation instead
+    /// of a lost recording.
+    ///
+    /// Deliberately a pure read: the stored preference is left alone so that
+    /// reconnecting the device restores it without the user re-picking.
+    private func effectiveMicrophoneDeviceID(config: RecordingConfig) -> String? {
+        guard let id = config.microphoneDeviceID else { return nil }
+        return availableMicrophones.contains(where: { $0.uniqueID == id }) ? id : nil
+    }
+
+    /// The stored config with device selections resolved against what is
+    /// actually attached. Everything downstream (permissions preflight,
+    /// ScreenSource, Recorder) sees this one value, so the UI and the
+    /// recording can never disagree about which mic is in use.
+    private func effectiveConfig() -> RecordingConfig {
+        var config = settings.config
+        config.microphoneDeviceID = effectiveMicrophoneDeviceID(config: config)
+        return config
+    }
+
     // MARK: Actions
 
     @objc private func toggleRecording() {
@@ -934,14 +1172,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
 
-        // Re-enumerate right before recording: the saved display or camera may
-        // have been unplugged since the menu was last built, and on first run
-        // the display list is empty until Screen Recording has been granted.
-        await refreshDisplaysAndCameras()
+        // Re-enumerate right before recording: the saved display, camera or
+        // microphone may have been unplugged since the menu was last built,
+        // and on first run the display list is empty until Screen Recording
+        // has been granted. `effectiveConfig()` below reads the lists this
+        // refresh populates, so the order matters.
+        await refreshDisplaysAndDevices()
 
+        let config = effectiveConfig()
         let camera = selectedCamera()
         let wantsCamera = camera != nil
-        let report = await runPermissionsPreflight(includeCamera: wantsCamera)
+        let report = await runPermissionsPreflight(config: config, includeCamera: wantsCamera)
         guard report.canRecord else { return }
 
         guard let display = selectedDisplay() else {
@@ -971,7 +1212,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             try await engine.start(
                 display: display,
                 cameraDevice: camera.map(CameraDeviceBox.init),
-                config: settings.config,
+                config: config,
                 outputURL: RecordingsFolder.newRecordingURL()
             )
             isRecording = true
@@ -990,6 +1231,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func selectCamera(_ sender: NSMenuItem) {
         settings.selectedCameraUniqueID = sender.representedObject as? String
+        rebuildMenu()
+    }
+
+    /// Read-modify-write on the whole config, like every other config-backed
+    /// menu action here — `settings.config` is a computed property over a
+    /// single JSON blob, so mutating a field in place would not persist.
+    @objc private func selectMicrophone(_ sender: NSMenuItem) {
+        var config = settings.config
+        // nil representedObject is the "System Default" row, and nil is
+        // precisely what SCStreamConfiguration wants for that.
+        config.microphoneDeviceID = sender.representedObject as? String
+        settings.config = config
+        rebuildMenu()
+    }
+
+    @objc private func selectAudioTrackMode(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let mode = AudioTrackMode(rawValue: raw) else { return }
+        var config = settings.config
+        config.audioTrackMode = mode
+        settings.config = config
         rebuildMenu()
     }
 
@@ -1071,8 +1332,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// (which already names exactly which permission and where to grant it)
     /// and a button that opens System Settings to the first missing pane.
     @discardableResult
-    private func runPermissionsPreflight(includeCamera: Bool) async -> PermissionReport {
-        let report = await Permissions.preflight(config: settings.config, includeCamera: includeCamera)
+    private func runPermissionsPreflight(config: RecordingConfig, includeCamera: Bool) async -> PermissionReport {
+        let report = await Permissions.preflight(config: config, includeCamera: includeCamera)
         if !report.isSatisfied {
             presentPermissionAlert(report)
         }

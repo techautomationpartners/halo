@@ -513,8 +513,15 @@ public final class ScreenSource: NSObject, ScreenSourcing, SCStreamOutput, SCStr
 
         // TRAP #4 support: the mic rides ScreenCaptureKit's clock here rather
         // than a second AVCaptureSession, but it is still delivered on its own
-        // SCStreamOutputType and MUST reach a separate AVAssetWriterInput.
+        // SCStreamOutputType with its own CMFormatDescription. Downstream it
+        // must therefore either get its own AVAssetWriterInput (.separate) or
+        // be converted and summed by AudioMixer first (.mixed) — what it must
+        // never do is land raw on an input the system-audio stream also writes.
         streamConfig.captureMicrophone = config.captureMicrophone
+        // nil means "system default input", which is exactly what leaving
+        // microphoneCaptureDeviceID unset already does — so an unplugged
+        // device (resolved to nil upstream in AppDelegate.effectiveConfig)
+        // degrades to the built-in mic instead of recording silence.
         if config.captureMicrophone, let microphoneDeviceID {
             streamConfig.microphoneCaptureDeviceID = microphoneDeviceID
         }
